@@ -52,8 +52,6 @@ def preprocess_stanford_dataset(root):
 
     def process_lf_folder(lf_folder):
         img_files = os.listdir(lf_folder)
-        if 'dataset.h5' in img_files:
-            img_files.remove('dataset.h5')
         img_files.sort()
         assert len(img_files) == 17**2
         imgs = [Image.open(os.path.join(lf_folder, path)) for path in img_files]
@@ -65,10 +63,15 @@ def preprocess_stanford_dataset(root):
     lf_folders = os.listdir(root)
     lf_folders = [f for f in lf_folders if not f.endswith('.zip')]
     for folder in lf_folders:
+        if folder.endswith('.h5'):
+            continue
         print("Processing {} ...".format(folder))
         data = process_lf_folder(os.path.join(root, folder, 'rectified'))
         dset = file.create_dataset(folder, data=data)
     file.close()
+
+def proprocess_inria_dataset(root):
+    pass
 
 def test_dataset_h5(name):
     with open('dataset_config.yaml') as f:
@@ -101,5 +104,5 @@ def test_inria_dataset(root):
     pass
 
 if __name__ == '__main__':
-    #preprocess_lf_dataset('stanford')
+    preprocess_lf_dataset('stanford')
     test_dataset_h5('stanford')

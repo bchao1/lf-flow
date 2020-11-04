@@ -1,0 +1,37 @@
+import h5py
+
+class HCIDataset:
+    """ Note: read from h5 file """
+
+    def __init__(self, root, train=True):
+        self.root = root
+        self.train = train
+        self.dataset = h5py.File(self.root, 'r')
+        self.dataset_parts = list(self.dataset.keys())
+        assert set(self.dataset_parts) == set(['additional', 'test', 'training'])
+        if self.train:
+            self.dataset_parts.remove('test')  # use 'additional' and 'training' as training data
+        else:
+            self.dataset_parts = ['test']
+        self.lf_names = []  # access lf data by dataset[name][()]
+        for part in self.dataset_parts:
+            lfs = list(self.dataset[part].keys())
+            self.lf_names.extend(['/'.join([part, lf]) for lf in lfs])
+    
+    def __getitem__(self, i):
+        pass
+
+class StanfordDataset:
+    """ No testing set, use k-fold cross validation. """
+
+    def __init__(self, root):
+        self.root = root
+        self.dataset = h5py.File(self.root, 'r')
+        self.lf_names = list(self.dataset.keys())  # access lf data by dataset[name][()]
+        
+
+        
+
+if __name__ == "__main__":
+    #dataset = HCIDataset(root="../../../mnt/data2/bchao/lf/hci/full_data/dataset.h5")
+    dataset = StanfordDataset(root="../../../mnt/data2/bchao/lf/stanford/dataset.h5")

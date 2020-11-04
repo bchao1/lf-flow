@@ -18,7 +18,8 @@ def preprocess_lf_dataset(name):
         raise Error()
 
 def preprocess_hci_dataset(root):
-    os.remove(os.path.join(root, 'dataset.h5'))
+    if os.path.exists(os.path.join(root, 'dataset.h5')):
+        os.remove(os.path.join(root, 'dataset.h5'))
     file = h5py.File(os.path.join(root, 'dataset.h5'), 'w')
 
     def process_lf_folder(lf_folder):
@@ -47,7 +48,8 @@ def preprocess_hci_dataset(root):
     file.close()
 
 def preprocess_stanford_dataset(root):
-    os.remove(os.path.join(root, 'dataset.h5'))
+    if os.path.exists(os.path.join(root, 'dataset.h5')):
+        os.remove(os.path.join(root, 'dataset.h5'))
     file = h5py.File(os.path.join(root, 'dataset.h5'), 'w')
 
     def process_lf_folder(lf_folder):
@@ -70,8 +72,34 @@ def preprocess_stanford_dataset(root):
         dset = file.create_dataset(folder, data=data)
     file.close()
 
-def proprocess_inria_dataset(root):
-    pass
+def preprocess_inria_dataset(root):
+    if os.path.exists(os.path.join(root, 'dataset.h5')):
+        os.remove(os.path.join(root, 'dataset.h5'))
+    file = h5py.File(os.path.join(root, 'dataset.h5'), 'w')
+
+    def process_lf_folder(lf_folder):
+        img_files = os.listdir(lf_folder)
+        img_files.sort()
+        assert len(img_files) == 7**2
+        imgs = [Image.open(os.path.join(lf_folder, path)) for path in img_files]
+        imgs = [np.array(img) for img in imgs]
+        imgs = np.stack(imgs)
+        imgs = imgs.reshape(7, 7, *imgs.shape[1:])
+        return imgs
+
+    use = ['Training', 'Testing']
+    for subdir in use:
+        print("Processing {} ...".format(subdir))
+        group = file.create_group(subdir)
+        folder = os.path.join(root, subdir)
+        lfs = os.listdir(folder)  # all light field folders
+        for lf in lfs:
+            if lf in ['.DS_Store']:
+                continue
+            print("Processing {} ...".format(lf))
+            data = process_lf_folder(os.path.join(folder, lf))
+            dset = group.create_dataset(lf, data=data)
+    file.close()
 
 def test_dataset_h5(name):
     with open('dataset_config.yaml') as f:
@@ -101,8 +129,13 @@ def test_stanford_dataset(root):
     print("Access h5 file time : {}".format(time.time() - start))
 
 def test_inria_dataset(root):
-    pass
+    start = time.time()
+    file = h5py.File(os.path.join(root, 'dataset.h5'), 'r')
+    print(file.keys())
+    data = file['Training']['Guitar1'][()]
+    print("Lf size: {}".format(data.shape))
+    print("Access h5 file time : {}".format(time.time() - start))
 
 if __name__ == '__main__':
-    preprocess_lf_dataset('stanford')
-    test_dataset_h5('stanford')
+    #preprocess_lf_dataset('inria')
+    test_dataset_h5('inria')

@@ -28,10 +28,27 @@ class StanfordDataset:
         self.root = root
         self.dataset = h5py.File(self.root, 'r')
         self.lf_names = list(self.dataset.keys())  # access lf data by dataset[name][()]
+    
+    def __getitem__(self, i):
+        pass
         
+class INRIADataset:
+    def __init__(self, root, train=True):
+        self.root = root
+        self.train = train
+        self.dataset = h5py.File(self.root, 'r')
+        if self.train:
+            self.dataset = self.dataset['Training']
+        else:
+            self.dataset = self.dataset['Testing']
+        self.lf_names = list(self.dataset.keys()) # access lf data by dataset[name][()]
+    
+    def __getitem__(self, i):
+        pass
 
         
 
 if __name__ == "__main__":
     #dataset = HCIDataset(root="../../../mnt/data2/bchao/lf/hci/full_data/dataset.h5")
-    dataset = StanfordDataset(root="../../../mnt/data2/bchao/lf/stanford/dataset.h5")
+    #dataset = StanfordDataset(root="../../../mnt/data2/bchao/lf/stanford/dataset.h5")
+    #dataset = INRIADataset(root="../../../mnt/data2/bchao/lf/inria/Dataset_Lytro1G/dataset.h5")

@@ -12,6 +12,11 @@ def normalize(img):
     img = (img - np.min(img)) / (np.max(img) - np.min(img))
     return img
 
+def to_gray(img):
+    assert img.shape[-1] == 3
+    r, g, b = img[:, :, 0], img[:, :, 1], img[:, :, 2]
+    return 0.2126 * r + 0.7152 * g + 0.0722 * b
+
 def warp_image(img, flow_x, flow_y):
     h, w = img.shape[0], img.shape[1]
     x, y = np.meshgrid(np.arange(w), np.arange(h)) # original grids
@@ -27,8 +32,20 @@ def warp_image(img, flow_x, flow_y):
     for i in range(3):
         channel = img[:, :, i]
         new_img[:, :, i] = map_coordinates(channel, [warped_y, warped_x])
-    new_img = new_img.astype(np.uint8)
+    #new_img = new_img.astype(np.uint8)
     return new_img
+
+def warp_strip(view, disp, low, high, mode='horizontal'):
+    warped_imgs = []
+    for i in range(low, high):
+        if mode == 'horizontal':
+            img = warp_image(view, disp * i, 0)
+        elif mode == 'vertical':
+            img = warp_image(view, 0, disp * i)
+        else:
+            raise Error()
+        warped_imgs.append(img)
+    return np.stack(warped_imgs)
 
 def generate_lf(img, disp, lf_resolution):
     lf_x, lf_y = np.meshgrid(np.arange(lf_resolution), np.arange(lf_resolution))
@@ -65,3 +82,22 @@ def refocus(lf, pixels):
             refocused_img += shifted_img.astype(np.float)
     refocused_img /= (lf_h * lf_w)
     return (refocused_img * 255).astype(np.uint8)
+
+def animate_sequence(img_seq):
+    """
+        Animate an image sequence 
+    """
+
+    fig = plt.figure()
+    im = plt.imshow(img_seq[0])
+
+    while True:
+        for img in img_seq:
+            im.set_data(img)
+            fig.canvas.draw_idle()
+            plt.pause(1)
+
+if __name__ == '__main__':
+    lf = np.load("temp/lf_syn.npy")
+    lf = lf.reshape(lf.shape[0] * lf.shape[1], *lf.shape[2:])
+    animate_sequence(lf)

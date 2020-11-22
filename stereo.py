@@ -2,7 +2,9 @@ import numpy as np
 
 import pyflow
 import utils
+import image_utils
 import metrics
+import torch
 
 def optical_flow_cfg():
     cfg = {
@@ -37,6 +39,43 @@ def stereo2lf(im1, im2, mode="horizontal"):
         return dy
     else:
         return dx, dy
+
+def test_single_stereo():
+    from lf_datasets import HCIDataset
+    from utils import warp_image, warp_image_batch, normalize
+    from image_utils import save_image
+    dataset = HCIDataset(root="../../../mnt/data2/bchao/lf/hci/full_data/dataset.h5", use_all=True)
+    lf = np.array(dataset.get_single_lf(0), dtype=np.float) * 1.0 / 255
+
+    lf_res = lf.shape[0]
+    left_img = lf[lf_res // 2, 1]
+    right_img = lf[lf_res // 2, lf_res - 2]
+    target_view = lf[0, lf_res // 2] # top-middle view
+
+    d = stereo2lf(right_img, left_img) / (lf_res - 3)
+    
+    dx = d * (lf_res // 2 - 1)
+    dy = d * (0 - lf_res // 2)
+    syn_from_left = warp_image(left_img, dx, dy)
+    
+    d = -stereo2lf(left_img, right_img) / (lf_res - 3)
+    dx = d * (lf_res // 2 - (lf_res - 2))
+    dy = d * (0 - lf_res // 2)
+    syn_from_right = warp_image(right_img, dx, dy)
+
+    err_left = np.mean((target_view - syn_from_left)**2, axis=-1)
+    err_right = np.mean((target_view - syn_from_right)**2, axis=-1)
+    
+    err_left *= 255
+    err_right *= 255
+    target_view *= 255 
+    syn_from_left *= 255
+    syn_from_right *= 255
+    save_image(target_view, "./temp/target.png")
+    save_image(syn_from_left, "./temp/syn_left.png")
+    save_image(syn_from_right, "./temp/syn_right.png")
+    save_image(err_left, "./temp/err_left.png")
+    save_image(err_right, "./temp/err_right.png")
 
 def test_stereo2lf():
     from lf_datasets import HCIDataset, StanfordDataset, INRIADataset
@@ -147,4 +186,5 @@ def test_stereo2lf_gradient():
     
 if __name__ == '__main__':
     #test_stereo2lf()
-    test_stereo2lf_gradient()
+    #test_stereo2lf_gradient()
+    test_single_stereo()

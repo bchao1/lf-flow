@@ -2,7 +2,7 @@ import os
 import numpy as np
 import torch 
 import matplotlib
-matplotlib.use('Agg')
+#matplotlib.use('Agg')
 import matplotlib.pyplot as plt
 from PIL import Image
 from scipy.ndimage import map_coordinates
@@ -11,6 +11,21 @@ from scipy.ndimage import map_coordinates
 import torch
 import torch.nn.functional as F
 
+class AverageMeter:
+    def __init__(self):
+        self._n = 0
+        self._sum = 0
+        self._avg = 0
+    
+    def update(self, val, n = 1):
+        self._n += n
+        self._sum += val * n
+        self._avg = self._sum / self._n
+
+    @property
+    def avg(self):
+        return self._avg
+    
 def normalize(img):
     """ Perform min-max normalization on image range """
     
@@ -84,7 +99,7 @@ def generate_lf_batch(img, col_idxs, disp, lf_resolution):
     disp_x = []
     disp_y = []
     row_mid = lf_resolution // 2
-    row_idxs = torch.tensor(row_mid).repeat(n).to(img.device) # middle row for stereo
+    row_idxs = torch.tensor(row_mid).repeat(n).cuda() # middle row for stereo
     for i in range(lf_resolution): # row
         for j in range(lf_resolution): # col
             row_shear = (i - row_idxs).view(n, 1, 1).cuda()

@@ -4,11 +4,13 @@ import time
 import cv2
 
 import torch 
+import torch.nn.functional as F
 import torchvision
+
 
 def save_image(img, path):
     img = np.clip(img, 0, 255).astype(np.uint8)
-    Image.fromarray(img).save(path)
+    Image.fromarray(img.astype(np.uint8)).save(path)
     
 def sample_stereo_index(lf_size):
     """ Get the lf coordinate of stereo subimages """
@@ -72,6 +74,57 @@ def get_lf_horizonal_view(lf):
 
 def get_lf_vertical_view(lf):
     pass
+
+
+def grayscale_batch(batch):
+    """
+        Perform grayscale converstion on rgb image tensor
+
+        Input: 
+            batch: input rgb image tensor. Shape (N, 3, H, W)
+        Returns:
+            A (N, H, W) grayscale image
+    """
+    n = batch.shape[0]
+    r = batch[:, 0, :, :]
+    g = batch[:, 1, :, :]
+    b = batch[:, 2, :, :]
+    grayscale = 0.2126 * r + 0.7152 * g + 0.0722 * b
+    grayscale = grayscale.unsqueeze(1)
+    return grayscale
+
+def sobel_filter_batch(batch, mode=0):
+    """ 
+        Perform sobel filtering on batch tensor.
+
+        Input: 
+            batch: input rgb image tensor. Shape (N, 3, H, W)
+        Returns:
+            A (N, H, W) edge map
+    """
+    grayscale = grayscale_batch(batch) # (N, H, W)
+    x_kernel = torch.tensor([
+        [1, 0, -1],
+        [2, 0, -2],
+        [1, 0, -1]
+    ]).float().to(batch.device).view(1, 1, 3, 3)
+
+    y_kernel = torch.tensor([
+        [1, 2, 1],
+        [0, 0, 0],
+        [-1, -2, -1]
+    ]).float().to(batch.device).view(1, 1, 3, 3)
+
+    G_x = F.conv2d(grayscale, x_kernel, padding=1).squeeze()
+    G_y = F.conv2d(grayscale, y_kernel, padding=1).squeeze()
+    
+    G_norm = torch.sqrt(torch.pow(G_x, 2) + torch.pow(G_y, 2))
+
+    if mode == 0:
+        return G_x, G_y
+    else:
+        return G_norm
+
 
 def test_im_utils():
     from lf_datasets import HCIDataset, StanfordDataset, INRIADataset
@@ -154,21 +207,42 @@ def rotate_lf(lf):
     rot_lf = multiview_to_lf(rot_mv, h, w)
     return rot_lf
 
-if __name__ == '__main__':
+def test_lf():
     #test_im_utils()
     import utils
-    lf = np.load("./experiments/syn_lf_100.npy")
-    lf = utils.denorm_tanh(lf)
+    #disp = np.load("./experiments/1123-2/disp1_1000.npy") * 10
+    #disp = disp[1]
+    #disp = utils.normalize(disp)
+    #disp = (disp * 255).astype(np.uint8)[0]
+    #Image.fromarray(disp).save('test.png')
+    lf = np.load("./experiments/1123-2/syn.npy")
+    lf = utils.denorm_tanh(lf)[0]
+    lf = np.transpose(lf, (0, 2, 3, 1))
+    print(lf.shape)
     #lf = lf.reshape(9, 9, *lf.shape[1:])
-    view = lf[0, 0]
-    view = torch.tensor(view).unsqueeze(0)
-    torchvision.utils.save_image(view, 'test.png')
-    #lf = lf.astype(np.uint8)
-    #lf = np.swapaxes(lf, 2, 4)
-    #lf = np.swapaxes(lf, 2, 3)
+    #lf = lf[:, 0]
+    #print(lf.shape)
+    utils.animate_sequence(lf)
+    ##lf = lf.reshape(9, 9, *lf.shape[1:])
+    #print(lf.shape)
+    ##view = lf[0, 0]
+    ##view = torch.tensor(view).unsqueeze(0)
+    ##torchvision.utils.save_image(view, 'test.png')
+    ##lf = lf.astype(np.uint8)
+    #lf = np.transpose(lf, (0, 1, 3, 4, 2))
     #img = lf_to_multiview(lf)
+    #img = (img * 255).astype(np.uint8)
     #print(img.shape)
-    #Image.fromarray(img).save('test.png')
+    #Image.fromarray(img).save('target.png')
     #lf = np.zeros((9, 9, 128, 128, 3))
     #lf = resize_lf(lf, 64)
     #print(lf.shape)
+
+def test_sobel():
+    import torch
+    x = torch.randn(5, 3, 128, 128)
+    o = grayscale_batch(x)
+    print(o.shape)
+
+if __name__ == '__main__':
+    test_sobel()

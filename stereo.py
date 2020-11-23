@@ -6,6 +6,8 @@ import image_utils
 import metrics
 import torch
 
+# HCI (512*512) max disparity: 37
+
 def optical_flow_cfg():
     cfg = {
         "alpha"              : 0.012,
@@ -81,12 +83,13 @@ def test_stereo2lf():
     from lf_datasets import HCIDataset, StanfordDataset, INRIADataset
     from PIL import Image
 
-    #dataset = HCIDataset(root="../../../mnt/data2/bchao/lf/hci/full_data/dataset.h5", use_all=True)
+    dataset = HCIDataset(root="../../../mnt/data2/bchao/lf/hci/full_data/dataset.h5", use_all=True)
     #dataset = StanfordDataset(root="../../../mnt/data2/bchao/lf/stanford/dataset.h5")
-    dataset = INRIADataset(root="../../../mnt/data2/bchao/lf/inria/Dataset_Lytro1G/dataset.h5", use_all=True)
+    #dataset = INRIADataset(root="../../../mnt/data2/bchao/lf/inria/Dataset_Lytro1G/dataset.h5", use_all=True)
 
     psnr_h_log = []
     psnr_v_log = []
+    max_disp = 0
     for i in range(dataset.num_lfs):
         #lf = dataset.get_single_lf(i)
         lf = np.array(dataset.get_single_lf(i), dtype=np.float) * 1.0 / 255
@@ -95,6 +98,7 @@ def test_stereo2lf():
         right_img = lf[lf_res // 2, lf_res - 2]
         
         d = stereo2lf(right_img, left_img)
+        max_disp = max(max_disp, np.max(np.abs(d.ravel())))
         disp = (utils.normalize(d) * 255).astype(np.uint8)
         #Image.fromarray(disp).save('temp/disp.png')
 
@@ -132,10 +136,11 @@ def test_stereo2lf():
 
         psnr_h_log.append(psnr_horizontal)
         psnr_v_log.append(psnr_vertical)
-    np.save('temp/psnr_h_inria.npy', np.array(psnr_h_log))
-    np.save('temp/psnr_v_inria.npy', np.array(psnr_v_log))
-    print("Horizontal PSNR: {}".format(np.mean(psnr_h_log)))
-    print("Vertical PSNR: {}".format(np.mean(psnr_v_log)))
+    print("Max disparity: ", max_disp)
+    #np.save('temp/psnr_h_inria.npy', np.array(psnr_h_log))
+    #np.save('temp/psnr_v_inria.npy', np.array(psnr_v_log))
+    #print("Horizontal PSNR: {}".format(np.mean(psnr_h_log)))
+    #print("Vertical PSNR: {}".format(np.mean(psnr_v_log)))
     return
 
 def test_stereo2lf_gradient():
@@ -185,6 +190,6 @@ def test_stereo2lf_gradient():
     return
     
 if __name__ == '__main__':
-    #test_stereo2lf()
+    test_stereo2lf()
     #test_stereo2lf_gradient()
-    test_single_stereo()
+    #test_single_stereo()

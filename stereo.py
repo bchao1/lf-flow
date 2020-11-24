@@ -6,7 +6,17 @@ import image_utils
 import metrics
 import torch
 
-# HCI (512*512) max disparity: 37
+"""
+1. HCI (512*512) max disparity: 37 pixels
+    - Focal length: 100mm (https://github.com/lightfield-analysis/blender-addon)
+    - Downsample 128: ~/4 -> 10 pixels
+2. INRIA (379 * 379) max disparity: 15 pixels
+    - Compute plenoptic camera baseline: http://www.plenoptic.info/files/IJCV_Hahne17_final.pdf
+    - Downsample 128: ~/3 -> 5 pixels
+3. Stanford (width 1500) max disparity: 277 pixels
+    - Crop to 512: max disaprity ~/3 -> 100 pixels
+    - Downsample to 128: max disparity ~/4 -> 25 pixels
+"""
 
 def optical_flow_cfg():
     cfg = {
@@ -83,8 +93,8 @@ def test_stereo2lf():
     from lf_datasets import HCIDataset, StanfordDataset, INRIADataset
     from PIL import Image
 
-    dataset = HCIDataset(root="../../../mnt/data2/bchao/lf/hci/full_data/dataset.h5", use_all=True)
-    #dataset = StanfordDataset(root="../../../mnt/data2/bchao/lf/stanford/dataset.h5")
+    #dataset = HCIDataset(root="../../../mnt/data2/bchao/lf/hci/full_data/dataset.h5", use_all=True)
+    dataset = StanfordDataset(root="../../../mnt/data2/bchao/lf/stanford/dataset.h5")
     #dataset = INRIADataset(root="../../../mnt/data2/bchao/lf/inria/Dataset_Lytro1G/dataset.h5", use_all=True)
 
     psnr_h_log = []

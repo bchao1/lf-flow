@@ -34,6 +34,7 @@ class DisparityNet(nn.Module):
             nn.ELU(),
             nn.Conv2d(in_channels=16, out_channels=1, kernel_size=3, padding=1),
             nn.Tanh()
+            #nn.Sigmoid()
         )
     
     def forward(self, x):
@@ -72,8 +73,9 @@ class LFRefineNet(nn.Module):
         return x + res
 
 if __name__ == "__main__":
-    rnet = LFRefineNet(in_channels=81).cuda()
+    in_channels = 9
+    rnet = LFRefineNet(in_channels=in_channels).cuda()
     dnet = DisparityNet().cuda()
-    x = torch.randn(5, 6, 256, 256).cuda()
-    o = dnet(x)
+    x = torch.randn(5, in_channels, 4, 4, 4).cuda()
+    o = rnet(x)
     print(o.shape)

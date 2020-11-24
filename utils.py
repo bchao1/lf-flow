@@ -60,6 +60,7 @@ def warp_image_batch(img, flow_x, flow_y):
     new_grid = grid + flow
     new_grid[:, :, :, 0] = 2 * new_grid[:, :, :, 0].clone() / (w - 1) - 1
     new_grid[:, :, :, 1] = 2 * new_grid[:, :, :, 1].clone() / (h - 1) - 1
+    new_grid = torch.clamp(new_grid, -1, 1)
     new_image = F.grid_sample(img, new_grid, align_corners=False)
     return new_image
 
@@ -93,28 +94,89 @@ def warp_strip(view, disp, low, high, mode='horizontal'):
         warped_imgs.append(img)
     return np.stack(warped_imgs)
 
-def generate_lf_batch(img, col_idxs, disp, lf_resolution):
+def generate_lf_batch(img, row_idxs, col_idxs, disp, lf_resolution):
     n = img.shape[0]
     lf = []
     disp_x = []
     disp_y = []
-    row_mid = lf_resolution // 2
-    row_idxs = torch.tensor(row_mid).repeat(n).cuda() # middle row for stereo
     for i in range(lf_resolution): # row
         for j in range(lf_resolution): # col
             row_shear = (i - row_idxs).view(n, 1, 1).cuda()
             col_shear = (j - col_idxs).view(n, 1, 1).cuda()
             dy = disp * row_shear
             dx = disp * col_shear
-            #disp_x.append(dx.unsqueeze(1))
-            #disp_y.append(dy.unsqueeze(1))
             view = warp_image_batch(img, dx, dy)
             lf.append(view.unsqueeze(1))
-    #disp_x = torch.cat(disp_x, dim=1).unsqueeze(2)
-    #disp_y = torch.cat(disp_y, dim=1).unsqueeze(2)
-    #flows = torch.cat([disp_x, disp_y], dim=2)
     lf = torch.cat(lf, dim=1)
     return lf#, flows
+
+def compute_alpha_blending(left_idx, right_idx, left_lf, right_lf, lf_res):
+    """
+        Args:
+            left_idx: (N, )
+            right_idx: (N, )
+            left_lf: (N, num_views, 3, h, w)
+            right_lf: (N, num_views, 3, h, w)
+            lf_res: (,)
+        Returns:
+            blended light field (N, num_views, 3, h, w)
+    """
+    n, num_views, _, _, _ = left_lf.shape
+    assert num_views == lf_res**2
+    device = left_lf.device
+
+    x_dist = torch.arange(lf_res).repeat(lf_res, 1).float().to(device)
+    x_dist = x_dist.unsqueeze(0).repeat(n, 1, 1)
+    
+    l_shift = torch.abs(x_dist - left_idx.view(n, 1, 1))
+    r_shift = torch.abs(x_dist - right_idx.view(n, 1, 1))
+    weights = l_shift + r_shift
+    #print(weights[:, :, 0])
+    alpha = r_shift / weights # alpha value for left view
+    alpha = alpha.view(n, num_views, 1, 1, 1)
+    blended_lf = alpha * left_lf + (1 - alpha) * right_lf
+    return blended_lf
+
+def get_weight_map(row_idx, left_idx, right_idx, lf_res):
+    """
+        Args:
+            row_idx, left_idx, right_idx: (N, )
+            lf_res: (,)
+        Returns:
+            Weighted loss map: (N, lf_res**2, 1, 1, 1). To multiply with light field
+    """
+    device = row_idx.device
+    n = row_idx.shape[0]
+    x_dist = torch.arange(lf_res).repeat(lf_res, 1).float()
+    y_dist = x_dist.clone().T
+    x_dist = x_dist.unsqueeze(0).repeat(n, 1, 1).to(device)
+    y_dist = y_dist.unsqueeze(0).repeat(n, 1, 1).to(device)
+
+    left_shift = torch.pow(x_dist - left_idx.view(n, 1, 1), 2)
+    right_shift = torch.pow(x_dist - right_idx.view(n, 1, 1), 2)
+    row_shift = torch.pow(y_dist - row_idx.view(n, 1, 1), 2)
+    left_dist = torch.sqrt(left_shift + row_shift)
+    right_dist = torch.sqrt(right_shift + row_shift)
+    avg_dist = (left_dist + right_dist) * 0.5
+    w_sum = torch.sum(avg_dist.view(n, -1), dim=1).view(n, 1, 1)
+    avg_dist = (avg_dist / w_sum) * (lf_res**2) # scale weights
+    avg_dist = avg_dist.view(n, -1, 1, 1, 1)
+    return avg_dist
+    
+def compute_view_wise_loss(x, target, row_idx, left_idx, right_idx, loss_func):
+    """
+        Compute loss agaist distance of novel view to input view
+
+        Args:
+            x: (N, num_views, 3, H, W)
+            target: (N, num_views, 3, H, W)
+            row_idx: (N, )
+            left_idx: (N, )
+            right_idx: (N, )
+            loss_func: to compute view-wise loss
+    """
+
+    assert x.shape == target.shape
 
 def generate_lf(img, disp, lf_resolution):
     lf_x, lf_y = np.meshgrid(np.arange(lf_resolution), np.arange(lf_resolution))
@@ -176,17 +238,44 @@ def plot_loss_logs(log, name, save_dir):
 def save_lf_data(lf, epoch, save_dir):
     pass
 
-if __name__ == '__main__':
-    #lf = np.load("temp/lf.npy")
-    #lf = lf.reshape(lf.shape[0] * lf.shape[1], *lf.shape[2:])
-    #target = np.array(Image.open('./temp/target.png'))
-    #syn_right = np.array(Image.open('./temp/syn_right.png'))
-    #syn_left = np.array(Image.open('./temp/syn_left.png'))
-    #err_left = np.array(Image.open('./temp/err_left.png'))
-    #print(err_left)
-    #err_right = np.array(Image.open('./temp/err_right.png'))
-    #animate_sequence([err_left, err_right])
-    lf = np.load("./experiments/syn_lf_100.npy")
-    lf = denorm_tanh(lf)[0]
-    lf = lf.reshape(9, 9, *lf.shape[1:])
+
+# tests
+def test_alpha_belding():
+    from image_utils import sample_stereo_index
+    b = 7
+    lf_res = 9
+    left_idx = []
+    right_idx = []
+    h, w = 128, 128
+    for _ in range(b):
+        _, l, r = sample_stereo_index(lf_res)
+        left_idx.append(l)
+        right_idx.append(r)
+    left_idx = torch.tensor(left_idx)
+    right_idx = torch.tensor(right_idx)
+    left_lf = torch.randn(b, lf_res**2, 3, h, w)
+    right_lf = torch.randn(b, lf_res**2, 3, h, w)
+    lf = compute_alpha_blending(left_idx, right_idx, left_lf, right_lf, lf_res)
     print(lf.shape)
+    
+def test_weight_map():
+    from image_utils import sample_stereo_index
+    b = 7
+    lf_res = 9
+    left_idx = []
+    right_idx = []
+    row_idx = []
+    h, w = 128, 128
+    for _ in range(b):
+        row, l, r = sample_stereo_index(lf_res)
+        left_idx.append(l)
+        right_idx.append(r)
+        row_idx.append(row)
+    left_idx = torch.tensor(left_idx)
+    right_idx = torch.tensor(right_idx)
+    row_idx = torch.tensor(row_idx)
+    w = get_weight_map(row_idx, left_idx, right_idx, lf_res)
+
+if __name__ == '__main__':
+    #test_alpha_belding()
+    test_weight_map()

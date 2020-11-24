@@ -1,6 +1,7 @@
 import skimage.metrics as metrics
 import numpy as np
 import torch
+import torch.nn as nn
 
 def psnr(img, target):
     return metrics.peak_signal_noise_ratio(target, img)
@@ -33,4 +34,23 @@ class ColorConstancyLoss:
         loss = torch.mean(color_std.view(-1))
         return loss
 
+class TVLoss:
+    """ Regularization to constrain the total variation of the disparity map """
+    def __init__(self):
+        pass
+    
+    def __call__(self, x):
+        # x: (N, H, W) disparity map
+        # Compute x-gradient and y-gradient. Minimize variation
+        return x
 
+class WeightedReconstructionLoss(nn.Module):
+    def __init__(self, loss_func):
+        super(WeightedReconstructionLoss, self).__init__()
+        self.loss_func = loss_func 
+    
+    def __call__(self, x, target, w = 1):
+        assert x.shape == target.shape
+        if torch.is_tensor(w):
+            w = w.expand_as(x) # avoid broadcasting and large memory overhead
+        return self.loss_func(x * w, target * w)

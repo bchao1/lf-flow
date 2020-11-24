@@ -16,8 +16,9 @@ def sample_stereo_index(lf_size):
     """ Get the lf coordinate of stereo subimages """
     mid_index = lf_size // 2
     row_index = np.random.randint(1, lf_size - 1)
-    left_stereo_index = np.random.randint(1, mid_index)
-    right_stereo_index = np.random.randint(mid_index + 1, lf_size - 1)
+    # Think about this part!
+    left_stereo_index = np.random.randint(1, mid_index) # sample from left part of light field
+    right_stereo_index = np.random.randint(mid_index + 1, lf_size - 1) # sample from right part of light field
     return row_index, left_stereo_index, right_stereo_index
 
 def sample_lf_index(lf_size):
@@ -215,10 +216,13 @@ def test_lf():
     #disp = utils.normalize(disp)
     #disp = (disp * 255).astype(np.uint8)[0]
     #Image.fromarray(disp).save('test.png')
-    lf = np.load("./experiments/1123-2/syn.npy")
-    lf = utils.denorm_tanh(lf)[0]
-    lf = np.transpose(lf, (0, 2, 3, 1))
-    print(lf.shape)
+    lf = np.load("./temp/test.npy")
+    #print(lf.shape)
+    lf = lf.reshape(7*7, *lf.shape[2:])
+    #print(lf.shape)
+    #lf = utils.denorm_tanh(lf)[0]
+    #lf = np.transpose(lf, (0, 2, 3, 1))
+    #print(lf.shape)
     #lf = lf.reshape(9, 9, *lf.shape[1:])
     #lf = lf[:, 0]
     #print(lf.shape)
@@ -245,4 +249,5 @@ def test_sobel():
     print(o.shape)
 
 if __name__ == '__main__':
-    test_sobel()
+    #test_sobel()
+    test_lf()

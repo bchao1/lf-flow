@@ -198,7 +198,7 @@ def main():
     color_criterion = ColorConstancyLoss(patch_size=args.imsize // 4)
     norm01 = transforms.Normalize01()
     
-    refine_net = LFRefineNet(in_channels=dataset.lf_res**2)
+    refine_net = LFRefineNet(views=dataset.lf_res**2)
     dispartiy_net = DisparityNet()
 
     if torch.cuda.is_available():
@@ -324,8 +324,8 @@ def main():
         plot_loss_logs(edge_loss_log, "edge_loss", os.path.join(args.save_dir, 'plots'))
         if e % args.save_epochs == 0:
             # checkpointing
-            np.save(os.path.join(args.save_dir, "results", "syn_lf_{}.npy".format(e)), syn_lf[0].detach().cpu().numpy())
-            np.save(os.path.join(args.save_dir, "results", "target_lf_{}.npy".format(e)), target_lf[0].detach().cpu().numpy())
+            #np.save(os.path.join(args.save_dir, "results", "syn_lf_{}.npy".format(e)), syn_lf[0].detach().cpu().numpy())
+            #np.save(os.path.join(args.save_dir, "results", "target_lf_{}.npy".format(e)), target_lf[0].detach().cpu().numpy())
             #np.save(os.path.join(args.save_dir, "disp1_{}.npy".format(e)), disp1.detach().cpu().numpy())
             #np.save(os.path.join(args.save_dir, "disp2_{}.npy".format(e)), disp2.detach().cpu().numpy())
             torch.save(refine_net.state_dict(), os.path.join(args.save_dir, "ckpt", "refine_{}.ckpt".format(e)))

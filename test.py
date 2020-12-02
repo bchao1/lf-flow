@@ -1,8 +1,9 @@
 import os
 import numpy as np
 from argparse import ArgumentParser
-from utils import normalize
+from utils import normalize, view_loss_to_dist
 from image_utils import save_image
+import torch.nn.functional as F
 
 def test_naive_flow():
     datasets = ['hci', 'inria', 'stanford']
@@ -18,27 +19,13 @@ def test_naive_flow():
     print(h[6])
     print(v[6])
 
-def error_by_view(syn_lf, target_lf):
-    n, num_views, c, h, w = syn_lf.shape
-    err = (syn_lf - target_lf)**2
-    err = err.reshape(n, num_views, c * h * w)
-    err = np.mean(err, axis=-1)
-    err = np.mean(err, axis=0)
-    return err
-
-def get_weight_map(lf_res, left_idx, right_idx):
-    grid_h, grid_w = np.meshgrid(np.arange(lf_res), np.arange(lf_res), indexing='ij')
-
-    mid = lf_res // 2
-    rel_h = grid_h - mid
-
-    left_w = grid_w - left_idx
-    right_w = grid_w - right_idx
-
-    d_left = np.sqrt(rel_h**2 + left_w**2)
-    d_right = np.sqrt(rel_h**2 + right_w**2)
-    d = d_left + d_right
-    return d
+def plot_loss_against_dist(dist, loss):
+    import matplotlib 
+    matplotlib.use("Agg")
+    import matplotlib.pyplot as plt
+    plt.plot(dist, loss)
+    plt.savefig("test.png")
+    plt.close()
 
 def run_inference():
     import torch
@@ -55,12 +42,15 @@ def run_inference():
     parser.add_argument("--name", type=str)
     parser.add_argument("--use_epoch", type=int, default=1000)
     parser.add_argument("--max_disparity", type=float, default=10)
-    parser.add_argument("--runs", type=int, default=5) # average result over 5 inference runs
+    parser.add_argument("--runs", type=int, default=1) # average result over 5 inference runs
+    parser.add_argument("--fold", type=int, default=0)
 
     args = parser.parse_args()
     args.use_crop = False
     args_dict = vars(args)
     
+    if args.dataset == 'stanford':
+        args.name = args.name + "_fold{}".format(args.fold)
     if None in list(args_dict.values()):
         not_specified = [key for key in args_dict if args_dict[key] is None]
         raise ValueError("Please specify: {}".format(", ".join(not_specified)))
@@ -70,7 +60,7 @@ def run_inference():
     # Prepare datasets
     dataset, dataloader = get_dataset_and_loader(args, train=False)
 
-    refine_net = LFRefineNet(in_channels=dataset.lf_res**2)
+    refine_net = LFRefineNet(views=dataset.lf_res**2)
     disparity_net = DisparityNet()
 
     refine_net_path = os.path.join(args.save_dir, "ckpt", "refine_{}.ckpt".format(args.use_epoch))
@@ -91,6 +81,7 @@ def run_inference():
     max_psnr = 0
     avg_psnr = 0
     
+    loss_to_dist = 0
     for r in range(1, args.runs + 1):
         print("Run ", r)
         psnr_avg = AverageMeter()
@@ -100,11 +91,14 @@ def run_inference():
             target_lf = target_lf.permute(0, 1, 4, 2, 3).float()
             left_idx = left_idx.float()
             right_idx = right_idx.float()
+            row_idx = row_idx.float()
+
             if torch.cuda.is_available():
                 stereo_pair = stereo_pair.cuda()
                 target_lf = target_lf.cuda()
                 left_idx = left_idx.cuda()
                 right_idx = right_idx.cuda()
+                row_idx = row_idx.cuda()
             
             left = stereo_pair[:, :3, :, :]
             right = stereo_pair[:, 3:, :, :]
@@ -128,12 +122,14 @@ def run_inference():
             merged_lf = (coarse_lf_left + coarse_lf_right) * 0.5
             syn_lf = refine_net(merged_lf)
             
+
+            dist, loss = view_loss_to_dist(
+                syn_lf, target_lf, row_idx, left_idx, right_idx,
+                dataset.lf_res, F.mse_loss
+            )
+            loss_to_dist += loss
             syn_lf = syn_lf.detach().cpu().numpy()
             target_lf = target_lf.detach().cpu().numpy()
-            #view_error = error_by_view(syn_lf, target_lf)
-            #w_map = get_weight_map(dataset.lf_res, left_idx[0].item(), right_idx[0].item())
-            #w_map = w_map.ravel()
-
             psnr = metrics.psnr(syn_lf, target_lf)
             print("PSNR: ", psnr)
             psnr_avg.update(psnr, n)
@@ -145,6 +141,9 @@ def run_inference():
     avg_psnr /= args.runs
     print("Best PSNR: ", max_psnr)
     print("Average PSNR: ", avg_psnr)
+
+    loss_to_dist /= len(dataset)
+    plot_loss_against_dist(dist, loss_to_dist)
         #np.save(os.path.join(args.save_dir, 'syn.npy'), syn_lf)
         #np.save(os.path.join(args.save_dir, 'target.npy'), target_lf)
 

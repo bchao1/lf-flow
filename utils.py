@@ -1,11 +1,11 @@
 import os
 import numpy as np
-import torch 
 import matplotlib
 #matplotlib.use('Agg')
 import matplotlib.pyplot as plt
 from PIL import Image
 from scipy.ndimage import map_coordinates
+from collections import Counter
 
 
 import torch
@@ -110,6 +110,28 @@ def generate_lf_batch(img, row_idxs, col_idxs, disp, lf_resolution):
     lf = torch.cat(lf, dim=1)
     return lf#, flows
 
+def generate_lf_batch_single_image(img, depths, lf_res):
+    lf = []
+    for i in range(lf_res):
+        for j in range(lf_res):
+            depth = depths[:, i * lf_res + j]
+            row_shear = i - lf_res // 2
+            col_shear = j - lf_res // 2
+            dy = depth * row_shear
+            dx = depth * col_shear
+            view = warp_image_batch(img, dx, dy)
+            lf.append(view.unsqueeze(1))
+    lf = torch.cat(lf, dim=1)
+    return lf
+
+def shift_depths(depths, delX, delY):
+    b, n, h, w = depths.shape
+    dx = torch.empty(b, h, w).fill_(delX).to(depths.device)
+    dy = torch.empty(b, h, w).fill_(delY).to(depths.device)
+    return warp_image_batch(depths, dx, dy)
+
+
+
 def compute_alpha_blending(left_idx, right_idx, left_lf, right_lf, lf_res):
     """
         Args:
@@ -137,7 +159,7 @@ def compute_alpha_blending(left_idx, right_idx, left_lf, right_lf, lf_res):
     blended_lf = alpha * left_lf + (1 - alpha) * right_lf
     return blended_lf
 
-def get_weight_map(row_idx, left_idx, right_idx, lf_res):
+def get_weight_map(row_idx, left_idx, right_idx, lf_res, reduce=True):
     """
         Args:
             row_idx, left_idx, right_idx: (N, )
@@ -158,12 +180,13 @@ def get_weight_map(row_idx, left_idx, right_idx, lf_res):
     left_dist = torch.sqrt(left_shift + row_shift)
     right_dist = torch.sqrt(right_shift + row_shift)
     avg_dist = (left_dist + right_dist) * 0.5
-    w_sum = torch.sum(avg_dist.view(n, -1), dim=1).view(n, 1, 1)
-    avg_dist = (avg_dist / w_sum) * (lf_res**2) # scale weights
-    avg_dist = avg_dist.view(n, -1, 1, 1, 1)
+    if reduce: # scale weights
+        w_sum = torch.sum(avg_dist.view(n, -1), dim=1).view(n, 1, 1)
+        avg_dist = (avg_dist / w_sum) * (lf_res**2) # scale weights
+        avg_dist = avg_dist.view(n, -1, 1, 1, 1)
     return avg_dist
     
-def compute_view_wise_loss(x, target, row_idx, left_idx, right_idx, loss_func):
+def view_loss_to_dist(x, target, row_idx, left_idx, right_idx, lf_res, loss_func):
     """
         Compute loss agaist distance of novel view to input view
 
@@ -177,6 +200,28 @@ def compute_view_wise_loss(x, target, row_idx, left_idx, right_idx, loss_func):
     """
 
     assert x.shape == target.shape
+    n, num_views, _, h, w = x.shape
+    dist = get_weight_map(row_idx, left_idx, right_idx, lf_res, reduce=False) # (N, lf_res, lf_res)
+    dist = dist.view(n, num_views) # (N, num_views)
+    loss = loss_func(x, target, reduction="none")
+    loss = torch.mean(loss.view(n, num_views, -1), dim=-1) # (N, num_views)
+
+    dist = dist.view(-1).detach().cpu().numpy() # flatten
+    loss = loss.view(-1).detach().cpu().numpy() # flatten
+
+    dist_loss = dict.fromkeys(dist, 0)
+    dist_cnt = dict.fromkeys(dist, 0)
+    
+    for d, l in zip(dist, loss):
+        dist_loss[d] += l
+        dist_cnt[d] += 1
+    for d in dist_loss.keys():
+        dist_loss[d] /= dist_cnt[d]
+    dist = sorted(dist_loss.keys())
+    loss = [dist_loss[d] for d in dist]
+    return np.array(dist), np.array(loss)
+
+
 
 def generate_lf(img, disp, lf_resolution):
     lf_x, lf_y = np.meshgrid(np.arange(lf_resolution), np.arange(lf_resolution))
@@ -276,6 +321,31 @@ def test_weight_map():
     row_idx = torch.tensor(row_idx)
     w = get_weight_map(row_idx, left_idx, right_idx, lf_res)
 
+def test_view_loss_against_dist():
+    from image_utils import sample_stereo_index
+    b = 7
+    lf_res = 9
+    left_idx = []
+    right_idx = []
+    row_idx = []
+    h, w = 128, 128
+    for _ in range(b):
+        row, l, r = sample_stereo_index(lf_res)
+        left_idx.append(l)
+        right_idx.append(r)
+        row_idx.append(row)
+    left_idx = torch.tensor(left_idx)
+    right_idx = torch.tensor(right_idx)
+    row_idx = torch.tensor(row_idx)
+    x = torch.randn(b, lf_res**2, 3, h, w)
+    target = torch.randn(b, lf_res**2, 3, h, w)
+    view_loss_to_dist(x, target, row_idx, left_idx, right_idx, lf_res, F.l1_loss)
+
 if __name__ == '__main__':
     #test_alpha_belding()
-    test_weight_map()
+    #test_weight_map()
+    #test_view_loss_against_dist()
+    lf = np.load("./temp/test.npy")#[0] # lytro 的 view 是相反？？
+    lf = (lf + 1) * 0.5
+    #print(lf.shape)
+    animate_sequence(lf)

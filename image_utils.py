@@ -47,6 +47,24 @@ def resize_lf(lf, sz):
             new_lf[i, j, :, :, :] = cv2.resize(view, (sz, sz))
     return new_lf
 
+def resize_lf_ratio(lf, downsample):
+    """ 
+        Args: 
+            lf: 4D light field (L, L, H, W, C) 
+            sz: downsample size
+        Returns: 
+            Downsampled light field (L, L, sz, sz, C)
+    """
+    lfh, lfw, h, w, c = lf.shape
+    new_h = int(h * 1.0 / downsample)
+    new_w = int(w * 1.0 / downsample)
+    new_lf = np.zeros((lfh, lfw, new_h, new_w, c))
+    for i in range(lfh):
+        for j in range(lfw):
+            view = lf[i, j, :, :, :]
+            new_lf[i, j, :, :, :] = cv2.resize(view, (new_w, new_h))
+    return new_lf
+
 def crop_lf(lf, sz):
     """ 
         Args: 

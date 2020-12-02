@@ -1,15 +1,18 @@
 import h5py
 import numpy as np
 import torch
-from image_utils import crop_lf, resize_lf
+from image_utils import crop_lf, resize_lf, resize_lf_ratio
 from image_utils import sample_lf_index, sample_stereo_index
 from image_utils import save_image
 from utils import denorm_tanh
 
+
 class LFDataset:
     """ All light field dataset inherits this base dataset """ 
 
-    def __init__(self, root, train, im_size, transform, use_crop=False):
+    def __init__(self, root, train, im_size, transform, use_crop=False, mode="stereo"):
+        assert mode in ["stereo", "single", "4crop"]
+        self.mode = mode
         self.root = root
         self.train = train
         self.im_size = im_size
@@ -42,25 +45,37 @@ class LFDataset:
             lf = resize_lf(lf, self.im_size) #/ 255 # use resize
         lf = lf / 255
 
-        if self.train:
-            # Sample stereo views when training
-            stereo_row_idx, stereo_left_idx, stereo_right_idx = sample_stereo_index(self._lf_size)
-        else:
-            stereo_row_idx = self.lf_res // 2 # middle row
-            stereo_left_idx = 1 # wide left view
-            stereo_right_idx = self.lf_res - 2 # wide right view
-        
-        stereo_left_image = lf[stereo_row_idx, stereo_left_idx]
-        stereo_right_image = lf[stereo_row_idx, stereo_right_idx]
+        if self.mode == "stereo":
+            if self.train:
+                # Sample stereo views when training
+                stereo_row_idx, stereo_left_idx, stereo_right_idx = sample_stereo_index(self._lf_size)
+            else:
+                stereo_row_idx = self.lf_res // 2 # middle row
+                stereo_left_idx = 1 # wide left view
+                stereo_right_idx = self.lf_res - 2 # wide right view
+            
+            stereo_left_image = lf[stereo_row_idx, stereo_left_idx]
+            stereo_right_image = lf[stereo_row_idx, stereo_right_idx]
 
-        paired_image = np.concatenate([stereo_left_image, stereo_right_image], axis=-1)
-        target_lf = lf.reshape(self._lf_size * self._lf_size, *lf.shape[2:])
+            paired_image = np.concatenate([stereo_left_image, stereo_right_image], axis=-1)
+            target_lf = lf.reshape(self._lf_size * self._lf_size, *lf.shape[2:])
 
-        if self.transform:
-            paired_image = self.transform(paired_image) # [H, W, 2C] 
-            target_lf = self.transform(target_lf) # [U*V, H, W, C]
-        
-        return paired_image, target_lf, stereo_row_idx, stereo_left_idx, stereo_right_idx
+            # Here normalization problem!
+            if self.transform:
+                paired_image = self.transform(paired_image) # [H, W, 2C] 
+                target_lf = self.transform(target_lf) # [U*V, H, W, C]
+            
+            return paired_image, target_lf, stereo_row_idx, stereo_left_idx, stereo_right_idx
+        elif self.mode == "single":
+            center_image = lf[self._lf_size // 2, self._lf_size // 2]
+            target_lf = lf.reshape(self._lf_size * self._lf_size, *lf.shape[2:])
+            if self.transform:
+                center_image = self.transform(center_image)
+                target_lf = self.transform(target_lf)
+            return center_image, target_lf
+        else: # 4-crops
+            pass 
+
     
     
 
@@ -68,8 +83,8 @@ class HCIDataset(LFDataset):
     """ Note: read from h5 file """
     """ Medium-baseline dataset """
 
-    def __init__(self, root, train=True, im_size=256, transform=None, use_all=False, use_crop=False):
-        super(HCIDataset, self).__init__(root, train, im_size, transform, use_crop)
+    def __init__(self, root, train=True, im_size=256, transform=None, use_all=False, use_crop=False, mode="stereo"):
+        super(HCIDataset, self).__init__(root, train, im_size, transform, use_crop, mode)
         self.dataset_parts = list(self.dataset.keys())
         self._lf_size = 9 # lf resolution
         assert set(self.dataset_parts) == set(['additional', 'test', 'training'])
@@ -92,9 +107,9 @@ class StanfordDataset(LFDataset):
         [0, 1] [2, 3] [4, 5] [6, 7] [8, 9] testing
     """
 
-    def __init__(self, root, train=True, im_size=128, transform=None,  fold=0):
-        assert 0 <= fold < 4
-        super(StanfordDataset, self).__init__(root, train, im_size, transform, use_crop=False)
+    def __init__(self, root, train=True, im_size=128, transform=None,  fold=0, mode="stereo"):
+        assert 0 <= fold < 5
+        super(StanfordDataset, self).__init__(root, train, im_size, transform, use_crop=False, mode=mode)
         self.root = root
         self.dataset = h5py.File(self.root, 'r')
         self.lf_names = list(self.dataset.keys())  # access lf data by dataset[name][()]
@@ -119,17 +134,23 @@ class StanfordDataset(LFDataset):
 
     def __getitem__(self, i):
         lf = self.get_single_lf(i) # retrieve original lf
-        lf = crop_lf(lf, self.im_size * 4) # (lf_size, lf_size, 2 * imsize, 2 * imsize, C) 512
-        lf = resize_lf(lf, self.im_size) #/ 255 # use resize to 128
-        lf = lf / 255
 
         if self.train:
+            lf = crop_lf(lf, 512) # (lf_size, lf_size, 2 * imsize, 2 * imsize, C) 512
+            lf = resize_lf(lf, self.im_size) #/ 255 # use resize to 128
             # Sample stereo views when training
             stereo_row_idx, stereo_left_idx, stereo_right_idx = sample_stereo_index(self._lf_size)
         else:
+            #lf = resize_lf(lf, self.im_size) #/ 255 # use resize to 128
+            # resize and crop light field for evaluation
+            lf = resize_lf_ratio(lf, 6)
             stereo_row_idx = self.lf_res // 2 # middle row
             stereo_left_idx = 1 # wide left view
             stereo_right_idx = self.lf_res - 2 # wide right view
+
+        lf = lf / 255
+        stereo_left_image = lf[stereo_row_idx, stereo_left_idx]
+        stereo_right_image = lf[stereo_row_idx, stereo_right_idx]
 
         paired_image = np.concatenate([stereo_left_image, stereo_right_image], axis=-1)
         target_lf = lf.reshape(self._lf_size * self._lf_size, *lf.shape[2:])
@@ -138,12 +159,12 @@ class StanfordDataset(LFDataset):
             paired_image = self.transform(paired_image) # [H, W, 2C] 
             target_lf = self.transform(target_lf) # [U*V, H, W, C]
         
-        return paired_image, target_lf, stereo_left_idx, stereo_right_idx
+        return paired_image, target_lf, stereo_row_idx, stereo_left_idx, stereo_right_idx
     
         
 class INRIADataset(LFDataset):
-    def __init__(self, root, train=True, im_size=256, transform=None, use_all=False, use_crop=False):
-        super(INRIADataset, self).__init__(root, train, im_size, transform, use_crop)
+    def __init__(self, root, train=True, im_size=256, transform=None, use_all=False, use_crop=False, mode="stereo"):
+        super(INRIADataset, self).__init__(root, train, im_size, transform, use_crop, mode)
         self.dataset_parts = list(self.dataset.keys())
         self._lf_size = 7
 

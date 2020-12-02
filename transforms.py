@@ -7,15 +7,20 @@ class ToTensor:
         return torch.tensor(x)
 
 class Normalize01:
-    """ Perform channel-wise [0, 1] normalization on [H, W, C] tensor """
+    """ Perform channel-wise [0, 1] normalization on [*, H, W, C] tensor """
 
     def __init__(self):
         pass
     
     def __call__(self, x):
         c = x.shape[-1]
-        channel_min = torch.min(x.reshape(-1, c), dim=0)[0].reshape(1, 1, c)
-        channel_max = torch.max(x.reshape(-1, c), dim=0)[0].reshape(1, 1, c)
+        if len(x.shape) == 3: # normal data (H, W, C)
+            channel_min = torch.min(x.reshape(-1, c), dim=0)[0].reshape(1, 1, c)
+            channel_max = torch.max(x.reshape(-1, c), dim=0)[0].reshape(1, 1, c)
+        elif len(x.shape) == 4: # light field (N, H, W, C)
+            n = x.shape[0]
+            channel_min = torch.min(x.reshape(n, -1, c), dim=1)[0].reshape(n, 1, 1, c)
+            channel_max = torch.max(x.reshape(n, -1, c), dim=1)[0].reshape(n, 1, 1, c)
         x = (x - channel_min) / (channel_max - channel_min + 1e-10)
         return x
 
@@ -28,12 +33,12 @@ class NormalizeRange:
         self.norm01 = Normalize01()
     
     def __call__(self, x):
-        #x = self.norm01(x)
+        x = self.norm01(x)
         x = (self.high - self.low) * x + self.low 
         return x
 
 if __name__ == '__main__':
-    x = torch.randn(5, 5, 3)
+    x = torch.randn(81, 5, 5, 3)
     t = NormalizeRange(-1, 1)
     o = t(x)
-    print(o[:, :, 0])
+    print(o[0][:, :, 0])

@@ -1,0 +1,1 @@
+{"imsize": 128, "batch_size": 8, "save_epochs": 500, "train_epochs": 2000, "lr": 0.001, "disparity_scale": 4.0, "use_crop": false, "recon_loss": "l1", "tv_loss_w": 0.01, "c_loss_w": 0.005, "gpu_id": 0, "dataset": "hci", "fold": null, "save_dir": "experiments_single_image/hci/all", "name": "all"}

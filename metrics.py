@@ -2,6 +2,8 @@ import skimage.metrics as metrics
 import numpy as np
 import torch
 import torch.nn as nn
+import torch.nn.functional as F
+from utils import shift_depths
 
 def psnr(img, target):
     return metrics.peak_signal_noise_ratio(target, img)
@@ -34,15 +36,55 @@ class ColorConstancyLoss:
         loss = torch.mean(color_std.view(-1))
         return loss
 
-class TVLoss:
-    """ Regularization to constrain the total variation of the disparity map """
-    def __init__(self):
-        pass
+class TVLoss(nn.Module):
+    """ Regularization to constrain the total variation of the disparity / depth map """
+    def __init__(self, w):
+        super(TVLoss, self).__init__()
+        self.w = w
     
-    def __call__(self, x):
-        # x: (N, H, W) disparity map
+    def __call__(self, img):
+        # img: (b, 1, H, W) disparity map
+        # img: (b, N, H, W) # is num views
         # Compute x-gradient and y-gradient. Minimize variation
-        return x
+        b, n, h, w = img.shape
+        img = img.contiguous().view(b*n, 1, h, w)
+
+        x_kernel = torch.tensor([
+            [1, 0, -1],
+            [2, 0, -2],
+            [1, 0, -1]
+        ]).float().to(img.device).view(1, 1, 3, 3)
+
+        y_kernel = torch.tensor([
+            [1, 2, 1],
+            [0, 0, 0],
+            [-1, -2, -1]
+        ]).float().to(img.device).view(1, 1, 3, 3)
+
+        G_x = F.conv2d(img, x_kernel, padding=1).squeeze()
+        G_y = F.conv2d(img, y_kernel, padding=1).squeeze()
+        loss = torch.mean(torch.abs(G_x) + torch.abs(G_y))
+        return loss * self.w
+
+class DepthConsistencyLoss(nn.Module):
+    def __init__(self, w):
+        super(DepthConsistencyLoss, self).__init__()
+        self.w = w
+    
+    def __call__(self, depths):
+        b, n, h, w = depths.shape
+        lf_res = int(np.sqrt(n))
+        shiftedX = shift_depths(depths, 1, 0).reshape(b, lf_res, lf_res, h, w)
+        shiftedY = shift_depths(depths, 0, 1).reshape(b, lf_res, lf_res, h, w)
+        shiftedXY = shift_depths(depths, 1, 1).reshape(b, lf_res, lf_res, h, w)
+        depths = depths.reshape(b, lf_res, lf_res, h, w)
+        
+        l1 = torch.abs(shiftedX[:, 1:, 1:, :, :] - depths[:, 1:, 1:, :, :])
+        l2 = torch.abs(shiftedY[:, 1:, 1:, :, :] - depths[:, 1:, 1:, :, :])
+        l3 = torch.abs(shiftedXY[:, 1:, 1:, :, :] - depths[:, 1:, 1:, :, :])
+        loss = torch.mean(l1 + l2 + l3)
+        return loss * self.w
+
 
 class WeightedReconstructionLoss(nn.Module):
     def __init__(self, loss_func):

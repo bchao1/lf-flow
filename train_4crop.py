@@ -24,8 +24,7 @@ from image_utils import lf_to_multiview, save_image
 from image_utils import sobel_filter_batch
 from metrics import TVLoss, DepthConsistencyLoss
 
-from models.flownet import FlowNetS, FlowNetC
-from models.lf_net import LFRefineNet, DepthNet
+from models.net_siggraph import Network
 import transforms
 
 
@@ -72,10 +71,52 @@ def get_dataset_and_loader(args, train):
     dataloader = DataLoader(dataset, batch_size=args.batch_size, shuffle=True, drop_last=False)
     return dataset, dataloader
     
-def synthsize_lf_from_crops(center_image, depths, lf_res, args):
-    depths = depths * args.disparity_scale # scale 
-    lf = generate_lf_batch_single_image(center_image, depths, lf_res)
-    return lf
+def get_input_features(corner_views, target_i, target_j, lf_res, disparity_levels):
+    # corner views (b, 4, 3, h, w)
+    # target view (b, 3, h, w)
+    # target i b,
+    # target j b, 
+    # disparities L
+    b, _, _, h, w = corner_views.shape
+    corner_indices = [(0, 0), (0, lf_res - 1), (lf_res - 1, 0), (lf_res - 1, lf_res - 1)]
+
+    means = []
+    stds = []
+    for d in disparity_levels:
+        warped = []
+        for idx, (i, j) in enumerate(corner_indices):
+            shift_i = target_i - i
+            shift_j = target_j - j
+            disp = torch.ones(b, h, w).to(corner_views.device) * d
+            dx = disp * shift_j.view(b, 1, 1)
+            dy = disp * shift_i.view(b, 1, 1)
+            corner_view = corner_views[:, idx, :, :, :]
+            syn = warp_image_batch(corner_view, dx, dy)
+            warped.append(syn.unsqueeze(1))
+        warped = torch.cat(warped, dim=1).view(b, len(corner_indices) * 3, h, w)
+        warped_mean = torch.mean(warped, dim=1)
+        warped_std = torch.std(warped, dim=1)
+        means.append(warped_mean.unsqueeze(1))
+        stds.append(warped_std.unsqueeze(1))
+    means = torch.cat(means, dim=1)
+    stds = torch.cat(stds, dim=1)
+    feat = torch.cat([means, stds], dim=1)
+    return feat
+
+def warp_to_view(corner_views, target_i, target_j, disp, lf_res):
+    b, _, _, h, w = corner_views.shape
+    corner_indices = [(0, 0), (0, lf_res - 1), (lf_res - 1, 0), (lf_res - 1, lf_res - 1)]
+    warped = []
+    for idx, (i, j) in enumerate(corner_indices):
+        shift_i = target_i - i
+        shift_j = target_j - j
+        dx = disp * shift_j.view(b, 1, 1)
+        dy = disp * shift_i.view(b, 1, 1)
+        corner_view = corner_views[:, idx, :, :, :]
+        syn = warp_image_batch(corner_view, dx, dy)
+        warped.append(syn)
+    warped = torch.cat(warped, dim=1)
+    return warped
 
 def main():
     parser = ArgumentParser()
@@ -87,7 +128,9 @@ def main():
     parser.add_argument("--save_epochs", type=int, default=100)
     parser.add_argument("--train_epochs", type=int, default=1000)
     parser.add_argument("--lr", type=float, default=0.001)
-    parser.add_argument("--disparity_levels", type=float, default=100) # specified in paper
+
+    parser.add_argument("--max_disparity", type=float, default=21) # specified in paper -21 ~ 21
+    parser.add_argument("--disparity_levels", type=int, default=100) # specified in paper
     parser.add_argument("--use_crop", action="store_true")
 
     # Losses and regularizations
@@ -131,8 +174,8 @@ def main():
     tv_criterion = TVLoss(w = args.tv_loss_w)
     consistency_criterion = DepthConsistencyLoss(w = args.c_loss_w)
 
-    refine_net = LFRefineNet(views=dataset.lf_res**2, with_depth=True)
-    depth_net = DepthNet(views=dataset.lf_res**2)
+    refine_net = Network(in_channels=3*4+1, out_channels=3)
+    depth_net = Network(in_channels=args.disparity_levels*2, out_channels=1)
 
     if torch.cuda.is_available():
         torch.cuda.set_device(args.gpu_id)
@@ -149,33 +192,32 @@ def main():
     optimizer_refine = torch.optim.Adam(refine_net.parameters(), lr=args.lr, betas=[0.9, 0.999], eps=1e-8)
     optimizer_depth = torch.optim.Adam(depth_net.parameters(), lr=args.lr, betas=[0.9, 0.999], eps=1e-8)
 
-
+    disparities = torch.linspace(-args.max_disparity, args.max_disparity, args.disparity_levels)
     lf_loss_log = []
     for e in range(1, args.train_epochs + 1):
         start = time.time()
-        for i, (center_image, target_lf) in enumerate(dataloader):
-            n, h, w, _ = center_image.shape
-
-            center_image = center_image.permute(0, 3, 1, 2).float()
-            target_lf = target_lf.permute(0, 1, 4, 2, 3).float()
+        for i, (corner_views, target_view, target_pos_i, target_pos_j) in enumerate(dataloader):
+            n, _, h, w, _ = corner_views.shape
+            
+            corner_views = corner_views.permute(0, 1, 4, 2, 3).float()
+            target_view = target_view.permute(0, 3, 1, 2).float()
             
             if torch.cuda.is_available():
-                center_image = center_image.cuda()
-                target_lf = target_lf.cuda()
+                corner_views = corner_views.cuda()
+                target_view = target_view.cuda()
+                target_pos_i = target_pos_i.cuda()
+                target_pos_j = target_pos_j.cuda()
 
-            depth = depth_net(center_image) # (b, N, H, W)
-            # warp by depth
-            coarse_lf = synthsize_lf_from_single_image(center_image, depth, dataset.lf_res, args)
-            depth_cat = torch.cat([depth.unsqueeze(2)] * 3, dim=2) #(b, N, 3, H, W)
+            # warping here!
+            features = get_input_features(corner_views, target_pos_i, target_pos_j, dataset.lf_res, disparities)
 
-            joined = torch.cat([coarse_lf, depth_cat], dim=1)            
-            syn_lf = refine_net(joined)
+            depth = depth_net(features) # (b, 1, H, W)
+            coarse_view = warp_to_view(corner_views, target_pos_i, target_pos_j, depth, dataset.lf_res)
 
-            lf_loss = criterion(syn_lf, target_lf)
-            tv_loss = tv_criterion(depth)
-            c_loss = consistency_criterion(depth)
+            joined = torch.cat([coarse_view, depth.unsqueeze(1)], dim=1)   
+            syn_view = refine_net(joined)
 
-            loss = lf_loss + tv_loss + c_loss
+            loss = criterion(syn_view, target_view)
 
             optimizer_refine.zero_grad()
             optimizer_depth.zero_grad()
@@ -183,13 +225,12 @@ def main():
             optimizer_refine.step()
             optimizer_depth.step()
 
-            lf_loss_log.append(lf_loss.item())
 
-            print("Epoch {:5d}, iter {:2d} | lf {:10f} | tv {:10f} | c {:10f} |".format(
-                e, i, lf_loss.item(), tv_loss.item(), c_loss.item()
+            print("Epoch {:5d}, iter {:2d} | loss {:10f} |".format(
+                e, i, loss.item()
             ))
 
-        plot_loss_logs(lf_loss_log, "lf_loss", os.path.join(args.save_dir, 'plots'))
+        #plot_loss_logs(lf_loss_log, "lf_loss", os.path.join(args.save_dir, 'plots'))
         if e % args.save_epochs == 0:
             # checkpointing
             #np.save(os.path.join(args.save_dir, "results", "syn_lf_{}.npy".format(e)), syn_lf[0].detach().cpu().numpy())

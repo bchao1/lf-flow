@@ -77,12 +77,14 @@ class LFDataset:
             # get 4 corner crops
             corner_i = [0, 0, self.lf_res - 1, self.lf_res - 1]
             corner_j = [0, self.lf_res - 1, 0, self.lf_res - 1]
-            corner_image = lf[corner_i, corner_j]
-            print(corner_image.shape)
-            exit()
-
-    
-    
+            corner_views = lf[corner_i, corner_j] # (4, h, w, 3)
+            target_i = np.random.randint(self.lf_res)
+            target_j = np.random.randint(self.lf_res)
+            target_view = lf[target_i, target_j]
+            if self.transform:
+                corner_views = self.transform(corner_views)
+                target_view = self.transform(target_view)
+            return corner_views, target_view, target_i, target_j
 
 class HCIDataset(LFDataset):
     """ Note: read from h5 file """

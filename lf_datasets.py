@@ -74,7 +74,12 @@ class LFDataset:
                 target_lf = self.transform(target_lf)
             return center_image, target_lf
         else: # 4-crops
-            pass 
+            # get 4 corner crops
+            corner_i = [0, 0, self.lf_res - 1, self.lf_res - 1]
+            corner_j = [0, self.lf_res - 1, 0, self.lf_res - 1]
+            corner_image = lf[corner_i, corner_j]
+            print(corner_image.shape)
+            exit()
 
     
     

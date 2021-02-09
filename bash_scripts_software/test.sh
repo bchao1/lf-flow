@@ -2,11 +2,12 @@
 # due to padding bugs, imsize needs to be:
 # - divisible by 7 for INRIA model
 # - divisible by 9 for HCI model
+# INRIA best: 371
+# HCI best: 504
 imsize="371" 
 
-# value:
-# - INRIA best: 15, 
-# - HCI   best: 35. 
+# INRIA best: 15 
+# HCI   best: 35 
 # Can play with this parameter.
 max_disparity="15" 
 

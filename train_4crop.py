@@ -68,7 +68,7 @@ def get_dataset_and_loader(args, train):
     else:
         raise ValueError("dataset [{}] not supported".format(args.dataset))
     print("Dataset size: {}".format(dataset.__len__()))
-    dataloader = DataLoader(dataset, batch_size=args.batch_size, shuffle=True, drop_last=False)
+    dataloader = DataLoader(dataset, batch_size=args.batch_size, shuffle=train, drop_last=False)
     return dataset, dataloader
     
 def get_input_features(corner_views, target_i, target_j, lf_res, disparity_levels):
@@ -131,6 +131,7 @@ def main():
 
     parser.add_argument("--max_disparity", type=float, default=21) # specified in paper -21 ~ 21
     parser.add_argument("--disparity_levels", type=int, default=100) # specified in paper
+    parser.add_argument("--scale_disparity", type=float, default=4)
     parser.add_argument("--use_crop", action="store_true")
 
     # Losses and regularizations
@@ -157,7 +158,7 @@ def main():
     # write config to file
     with open(os.path.join(args.save_dir, 'config.json'), 'w') as file:
         json.dump(vars(args), file)
-    copyfile("./bash_run_scripts/train_single_image.sh", os.path.join(args.save_dir, "train_single_image.sh"))
+    copyfile("./bash_run_scripts/train_4crop.sh", os.path.join(args.save_dir, "train_4crop.sh"))
 
     # set up
     dataset, dataloader = get_dataset_and_loader(args, train=True)
@@ -169,10 +170,6 @@ def main():
         criterion = nn.MSELoss()
     else:
         raise ValueError("Reconstruction loss {} not supported!".format(args.recon_loss))
-    
-    # total variation regularization
-    tv_criterion = TVLoss(w = args.tv_loss_w)
-    consistency_criterion = DepthConsistencyLoss(w = args.c_loss_w)
 
     refine_net = Network(in_channels=3*4+1, out_channels=3)
     depth_net = Network(in_channels=args.disparity_levels*2, out_channels=1)
@@ -186,14 +183,12 @@ def main():
 
         # Loss functions
         criterion = criterion.cuda()
-        tv_criterion = tv_criterion.cuda()
-        consistency_criterion = consistency_criterion.cuda()
 
     optimizer_refine = torch.optim.Adam(refine_net.parameters(), lr=args.lr, betas=[0.9, 0.999], eps=1e-8)
     optimizer_depth = torch.optim.Adam(depth_net.parameters(), lr=args.lr, betas=[0.9, 0.999], eps=1e-8)
 
     disparities = torch.linspace(-args.max_disparity, args.max_disparity, args.disparity_levels)
-    lf_loss_log = []
+    loss_log = []
     for e in range(1, args.train_epochs + 1):
         start = time.time()
         for i, (corner_views, target_view, target_pos_i, target_pos_j) in enumerate(dataloader):
@@ -211,7 +206,7 @@ def main():
             # warping here!
             features = get_input_features(corner_views, target_pos_i, target_pos_j, dataset.lf_res, disparities)
 
-            depth = depth_net(features) # (b, 1, H, W)
+            depth = depth_net(features) * args.scale_disparity # (b, 1, H, W)
             coarse_view = warp_to_view(corner_views, target_pos_i, target_pos_j, depth, dataset.lf_res)
 
             joined = torch.cat([coarse_view, depth.unsqueeze(1)], dim=1)   
@@ -224,13 +219,13 @@ def main():
             loss.backward()
             optimizer_refine.step()
             optimizer_depth.step()
-
+            loss_log.append(loss.item())
 
             print("Epoch {:5d}, iter {:2d} | loss {:10f} |".format(
                 e, i, loss.item()
             ))
 
-        #plot_loss_logs(lf_loss_log, "lf_loss", os.path.join(args.save_dir, 'plots'))
+        plot_loss_logs(loss_log, "loss", os.path.join(args.save_dir, 'plots'))
         if e % args.save_epochs == 0:
             # checkpointing
             #np.save(os.path.join(args.save_dir, "results", "syn_lf_{}.npy".format(e)), syn_lf[0].detach().cpu().numpy())

@@ -22,9 +22,8 @@ from utils import denorm_tanh, normalize
 from utils import compute_alpha_blending, get_weight_map
 from image_utils import lf_to_multiview, save_image
 from image_utils import sobel_filter_batch
-from metrics import ColorConstancyLoss, WeightedReconstructionLoss
+from metrics import ColorConstancyLoss, WeightedReconstructionLoss, TVLoss
 
-from models.flownet import FlowNetS, FlowNetC
 from models.lf_net import LFRefineNet, DisparityNet
 import transforms
 
@@ -129,7 +128,7 @@ def synthesize_lf_and_stereo(view1, view2, row_idx, view1_idx, stereo_ratio, lf_
     #empty_flow = torch.zeros_like(flow)
     coarse_lf = generate_lf_batch(view1, row_idx, view1_idx, unit_flow.squeeze(), lf_res)
     #syn_view2 = warp_image_batch(view1, flow_horizontal * stereo_ratio.view(n, 1, 1), empty_flow)
-    return coarse_lf, flow#, syn_view2
+    return coarse_lf, unit_flow#, syn_view2
     
 
 def main():
@@ -154,8 +153,8 @@ def main():
     parser.add_argument("--recon_loss", type=str, choices=['l1', 'l2'], default='l1')
     parser.add_argument("--edge_loss", type=str, choices=['l1', 'l2'], default='l1')
     parser.add_argument("--edge_loss_w", type=float, default=0.1)
-    parser.add_argument("--color_loss_w", type=float, default=0.1)
     parser.add_argument('--consistency_w', type=float, default=1)
+    parser.add_argument("--tv_loss_w", type=float, default=0.01)
     
     parser.add_argument("--gpu_id", type=int, choices=[0, 1], default=0)
     parser.add_argument("--dataset", type=str, choices=['hci', 'stanford', 'inria'], default='hci')
@@ -193,12 +192,10 @@ def main():
         edge_criterion = WeightedReconstructionLoss(loss_func = nn.MSELoss())
     else:
         raise ValueError("Edge preserving loss {} not supported!".format(args.edge_loss))
-    
-    l1loss = nn.L1Loss()
-    color_criterion = ColorConstancyLoss(patch_size=args.imsize // 4)
-    norm01 = transforms.Normalize01()
-    
-    refine_net = LFRefineNet(views=dataset.lf_res**2)
+    tv_criterion = TVLoss(w = args.tv_loss_w)
+    args.num_views = dataset.lf_res**2
+
+    refine_net = LFRefineNet(in_channels=args.num_views+2, out_channels=args.num_views)
     dispartiy_net = DisparityNet()
 
     if torch.cuda.is_available():
@@ -211,6 +208,7 @@ def main():
         # Loss functions
         criterion = criterion.cuda()
         edge_criterion = edge_criterion.cuda()
+        tv_criterion = tv_criterion.cuda()
         #color_criterion = color_criterion.cuda()
     
     #optimizer = torch.optim.Adam(
@@ -255,13 +253,11 @@ def main():
 
             stereo_ratio = right_idx - left_idx # positive shear value
 
-            coarse_lf_left, disp1 = synthesize_lf_and_stereo(
+            coarse_lf_left, unit_disp1 = synthesize_lf_and_stereo(
                 left, right, row_idx, left_idx, stereo_ratio, dataset.lf_res, 
                 dispartiy_net, False, args
             )
-            #print(disp1.shape)
-            #exit()
-            coarse_lf_right, disp2 = synthesize_lf_and_stereo(
+            coarse_lf_right, unit_disp2 = synthesize_lf_and_stereo(
                 right, left, row_idx, right_idx, stereo_ratio, dataset.lf_res,
                 dispartiy_net, True, args
             )
@@ -271,6 +267,9 @@ def main():
             else:
                 # Naive blend light field
                 merged_lf = (coarse_lf_left + coarse_lf_right) * 0.5
+            stack_disp1 = torch.cat([unit_disp1] * 3, dim=1).unsqueeze(1)
+            stack_disp2 = torch.cat([unit_disp2] * 3, dim=1).unsqueeze(1)
+            joined = torch.cat([merged_lf, stack_disp1, stack_disp2], dim=1)
             #merged_lf = coarse_lf_left
             #lf = merged_lf[1]
             #lf = (lf + 1) * 0.5
@@ -280,7 +279,7 @@ def main():
             #save_image(disp, 'test.png')
             #tv_save_image(disp, 'test.png')
             #exit()
-            syn_lf = refine_net(merged_lf)
+            syn_lf = refine_net(joined)
             edge_syn_lf = sobel_filter_batch(syn_lf.view(-1, *syn_lf.shape[2:]), mode=1)
             edge_target_lf = sobel_filter_batch(target_lf.view(-1, *syn_lf.shape[2:]), mode=1)
             edge_syn_lf = edge_syn_lf.view(n, dataset.lf_res**2, 1, h, w)
@@ -304,9 +303,8 @@ def main():
             lf_loss = criterion(syn_lf, target_lf, weight_map)
             consistency_loss = criterion(coarse_lf_left, coarse_lf_right, 1) * args.consistency_w
             edge_loss = edge_criterion(edge_syn_lf, edge_target_lf, weight_map) * args.edge_loss_w
-            color_constancy_loss = color_criterion(syn_lf) * args.color_loss_w # mean color of a patch should be same across views
-
-            loss = lf_loss + consistency_loss + edge_loss + color_constancy_loss
+            tv_loss = tv_criterion(unit_disp1) + tv_criterion(unit_disp2)
+            loss = lf_loss + consistency_loss + edge_loss + tv_loss
             
             optimizer_refine.zero_grad()
             optimizer_disp.zero_grad()
@@ -316,8 +314,8 @@ def main():
 
             lf_loss_log.append(lf_loss.item())
             edge_loss_log.append(edge_loss.item())
-            print("Epoch {:5d}, iter {:2d} | consistency: {:10f} | lf {:10f} | edge {:10f} | color {:10f}".format(
-                e, i, consistency_loss.item(), lf_loss.item(), edge_loss.item(), color_constancy_loss.item()
+            print("Epoch {:5d}, iter {:2d} | consistency: {:10f} | lf {:10f} | edge {:10f} | tv {:10f}".format(
+                e, i, consistency_loss.item(), lf_loss.item(), edge_loss.item(), tv_loss.item()
             ))
 
         plot_loss_logs(lf_loss_log, "lf_loss", os.path.join(args.save_dir, 'plots'))

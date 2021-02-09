@@ -1,14 +1,18 @@
 #!/bin/bash
 cd ..
-python3.7 train_4crop.py --imsize 128 --batch_size 8 \
+for f in 0 1 2 3 4
+do
+python3.7 train_4crop.py --imsize 128 --batch_size 9 \
     --save_epochs 500 \
     --train_epochs 2000 \
     --lr 0.001 \
     --disparity_levels 100 \
-    --recon_loss l1 \
-    --gpu_id 0 \
-    --c_loss_w 0.005 \
-    --tv_loss_w 0.01 \
-    --dataset hci \
+    --scale_disparity 40 \
+    --recon_loss l2 \
+    --gpu_id 1 \
+    --dataset stanford \
     --save_dir experiments_4crop \
-    --name all
+    --name best \
+    --use_crop \
+    --fold $f
+done

@@ -5,6 +5,7 @@ import utils
 import image_utils
 import metrics
 import torch
+from PIL import Image
 
 """
 1. HCI (512*512) max disparity: 37 pixels
@@ -13,7 +14,7 @@ import torch
 2. INRIA (379 * 379) max disparity: 15 pixels
     - Compute plenoptic camera baseline: http://www.plenoptic.info/files/IJCV_Hahne17_final.pdf
     - Downsample 128: ~/3 -> 5 pixels
-3. Stanford (width 1500) max disparity: 277 pixels
+3. Stanford (width 1500) max disparity: 174 pixels
     - Crop to 512: max disaprity ~/3 -> 100 pixels
     - Downsample to 128: max disparity ~/4 -> 25 pixels
 """
@@ -51,6 +52,21 @@ def stereo2lf(im1, im2, mode="horizontal"):
         return dy
     else:
         return dx, dy
+
+def stereo_matching():
+    left = np.array(Image.open("./data/left.jpeg"))
+    right = np.array(Image.open("./data/right.jpeg"))
+    left = left * 1.0 / 255
+    right = right * 1.0 / 255
+    left = image_utils.center_crop_resize(left, 378)
+    right = image_utils.center_crop_resize(right, 378)
+
+    d = stereo2lf(right, left)
+    print("disp:", max(d.ravel()), min(d.ravel()))
+    d = (d - np.min(d.ravel())) / (np.max(d.ravel()) - np.min(d.ravel()))
+    d = (d * 255).astype(np.uint8)
+    Image.fromarray(d).save('./data/bunny_disp.png')
+
 
 def test_single_stereo():
     from lf_datasets import HCIDataset
@@ -103,11 +119,14 @@ def test_stereo2lf():
     for i in range(dataset.num_lfs):
         #lf = dataset.get_single_lf(i)
         lf = np.array(dataset.get_single_lf(i), dtype=np.float) * 1.0 / 255
+        lf = image_utils.resize_lf(lf, 512)
+        print(lf.shape)
         lf_res = lf.shape[0]
         left_img = lf[lf_res // 2, 1]
         right_img = lf[lf_res // 2, lf_res - 2]
         
         d = stereo2lf(right_img, left_img)
+        print(np.max(np.abs(d.ravel())))
         max_disp = max(max_disp, np.max(np.abs(d.ravel())))
         disp = (utils.normalize(d) * 255).astype(np.uint8)
         #Image.fromarray(disp).save('temp/disp.png')
@@ -198,8 +217,21 @@ def test_stereo2lf_gradient():
     print("V edge PSNR: {}".format(metrics.psnr(vertical_syn_edge, vertical_target_edge)))
 
     return
-    
+
+def test_dataset():
+    from lf_datasets import HCIDataset, StanfordDataset, INRIADataset
+    from PIL import Image
+
+    #dataset = HCIDataset(root="../../../mnt/data2/bchao/lf/hci/full_data/dataset.h5", use_all=True)
+    dataset = StanfordDataset(root="../../../mnt/data2/bchao/lf/stanford/dataset.h5")
+    #dataset = INRIADataset(root="../../../mnt/data2/bchao/lf/inria/Dataset_Lytro1G/dataset.h5", use_all=True)
+    for i in range(len(dataset)):
+        lf = dataset.get_single_lf(i)
+        print(lf.shape)
+
 if __name__ == '__main__':
     test_stereo2lf()
     #test_stereo2lf_gradient()
     #test_single_stereo()
+    #stereo_matching()
+    #test_dataset()

@@ -11,6 +11,22 @@ def psnr(img, target):
 def mse(img, target):
     return metrics.mean_squared_error(img, target)
 
+def ssim(img, target, mode=0):
+    if mode == 0:
+        img, target = img.squeeze(), target.squeeze() # reduce batch dimension
+        img = np.transpose(img, (0, 2, 3, 1))
+        target = np.transpose(target, (0, 2, 3, 1))
+        ssim_sum = 0
+        for i in range(len(img)):
+            ssim_sum += metrics.structural_similarity(target[0], img[0], 
+                data_range=img[0].max() - img[0].min(), multichannel=True)
+        return ssim_sum / len(img)
+    else:
+        img = np.transpose(img, (1, 2, 0))
+        target = np.transpose(target, (1, 2, 0))
+        return metrics.structural_similarity(target, img, 
+                data_range=img.max() - img.min(), multichannel=True)
+
 class ColorConstancyLoss:
     """ Compute the color constancy of a light field patch 
 

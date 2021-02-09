@@ -31,6 +31,18 @@ def crop_image(img):
     """ Input 2D light image (H, W, C) """
     pass
 
+def center_crop_resize(img, sz):
+    # Center crop and resize an image
+    h, w, c = img.shape
+    if h > w:
+        top_pad = (h - w) // 2
+        img = img[top_pad:top_pad+w, :, :]
+    else:
+        left_pad = (w - h) // 2
+        img = img[:, left_pad:left_pad+h, :]
+    img = cv2.resize(img, (sz, sz), cv2.INTER_CUBIC)
+    return img
+    
 def resize_lf(lf, sz):
     """ 
         Args: 

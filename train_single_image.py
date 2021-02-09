@@ -24,7 +24,6 @@ from image_utils import lf_to_multiview, save_image
 from image_utils import sobel_filter_batch
 from metrics import TVLoss, DepthConsistencyLoss
 
-from models.flownet import FlowNetS, FlowNetC
 from models.lf_net import LFRefineNet, DepthNet
 import transforms
 
@@ -69,7 +68,7 @@ def get_dataset_and_loader(args, train):
     else:
         raise ValueError("dataset [{}] not supported".format(args.dataset))
     print("Dataset size: {}".format(dataset.__len__()))
-    dataloader = DataLoader(dataset, batch_size=args.batch_size, shuffle=True, drop_last=False)
+    dataloader = DataLoader(dataset, batch_size=args.batch_size, shuffle=train, drop_last=False)
     return dataset, dataloader
     
 def synthsize_lf_from_single_image(center_image, depths, lf_res, args):
@@ -131,7 +130,7 @@ def main():
     tv_criterion = TVLoss(w = args.tv_loss_w)
     consistency_criterion = DepthConsistencyLoss(w = args.c_loss_w)
 
-    refine_net = LFRefineNet(views=dataset.lf_res**2, with_depth=True)
+    refine_net = LFRefineNet(in_channels=dataset.lf_res**2 * 2, out_channels=dataset.lf_res**2)
     depth_net = DepthNet(views=dataset.lf_res**2)
 
     if torch.cuda.is_available():

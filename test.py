@@ -388,7 +388,7 @@ def test():
         run_inference(disparity_net, refine_net, dataloader, dataset, args)
     elif args.mode == "flow":
         test_flow(disparity_net, dataset, args)
-    elif args.mode == "stereo":
+    elif args.mode == "stereo": # HERE. Read in left-right stereo images
         left_path = "./data/left.jpeg"
         right_path = "./data/right.jpeg"
 

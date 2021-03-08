@@ -171,9 +171,9 @@ def test_dataset(dataset, train):
     elif dataset == 'inria':
         dataset = INRIADataset(root="../../../mnt/data2/bchao/lf/inria/Dataset_Lytro1G/dataset.h5", train=train)
     print(len(dataset))
-    lf = dataset.__getitem__(0)
-    print(lf[1].shape)
+    lf = dataset.get_single_lf(0)
+    np.save("sample_lf.npy", lf)
 
 if __name__ == "__main__":
-    test_dataset("stanford", True)
+    test_dataset("hci", True)
     

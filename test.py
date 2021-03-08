@@ -1,4 +1,4 @@
-import os
+mport os
 import numpy as np
 from argparse import ArgumentParser
 from utils import normalize, view_loss_to_dist
@@ -402,3 +402,4 @@ def test():
 if __name__ == '__main__':
     with torch.no_grad():
         test()
+

@@ -1,4 +1,5 @@
-mport os
+import os
+import imageio
 import numpy as np
 from argparse import ArgumentParser
 from utils import normalize, view_loss_to_dist
@@ -32,7 +33,7 @@ def get_err_map(lf, target_lf):
     #err = (err * 255).astype(np.uint8)
     return err
 
-def single_stereo(disparity_net, refine_net, left_path, right_path, args):
+def single_stereo(disparity_net, refine_net, left_path, right_path, args, i):
     import torchvision.transforms as tv_transforms
 
     import transforms
@@ -45,8 +46,7 @@ def single_stereo(disparity_net, refine_net, left_path, right_path, args):
         tv_transforms.ToTensor(),
     ])
 
-    i = "bunny"
-
+    start = time.time()
     left_img = Image.open(left_path)
     right_img = Image.open(right_path)
     left = t(left_img) # 0, 1
@@ -82,7 +82,41 @@ def single_stereo(disparity_net, refine_net, left_path, right_path, args):
         
         
     syn_lf = refine_net(merged_lf)
-    syn_lf = torch.clamp(syn_lf, -1, 1)
+    syn_lf = torch.clamp(syn_lf, -1, 1)[0]
+    
+    
+
+    frames = 81
+    fps = 10
+    writer = imageio.get_writer(f"temp/lf_{i}.mp4", mode='I', fps=fps)
+
+    for img in syn_lf:
+        img = (img + 1) * 0.5
+        img = img.detach().cpu().numpy()
+        img = np.transpose(img, (1, 2, 0))
+        img = (255 * img).astype(np.uint8)
+        writer.append_data(img)
+    writer.close()
+    print(time.time() - start)
+
+    focal_stack = []
+    frames = 20
+    fps = 5
+    writer = imageio.get_writer(f"temp/fstack_{i}.mp4", mode='I', fps=fps)
+
+    syn_lf = syn_lf.detach().cpu().numpy()
+    syn_lf = (syn_lf + 1) * 0.5
+    syn_lf = np.transpose(syn_lf, (0, 2, 3, 1))
+    syn_lf = np.reshape(syn_lf, (args.lf_res, args.lf_res, *syn_lf.shape[1:]))
+
+    for p in np.linspace(-1.5, 1.5, frames):
+        print(p)
+        img = refocus(syn_lf, p)
+        writer.append_data(img)
+    writer.close()
+
+
+
     unit_disp1 = unit_disp1.squeeze().detach().cpu().numpy()
     unit_disp2 = unit_disp2.squeeze().detach().cpu().numpy()
     unit_disp1 = (unit_disp1 - np.min(unit_disp1.ravel())) / (np.max(unit_disp1.ravel()) - np.min(unit_disp1.ravel()))
@@ -92,6 +126,7 @@ def single_stereo(disparity_net, refine_net, left_path, right_path, args):
     Image.fromarray(unit_disp1).save("./temp/disp_{}_1.png".format(i))
     Image.fromarray(unit_disp2).save("./temp/disp_{}_2.png".format(i))
     
+    """
     syn_lf = syn_lf.detach().cpu().numpy()
     merged_lf = merged_lf.detach().cpu().numpy()
     coarse_lf_right = coarse_lf_right.detach().cpu().numpy()
@@ -105,6 +140,7 @@ def single_stereo(disparity_net, refine_net, left_path, right_path, args):
     Image.fromarray(refocused_back).save("./temp/refocus_back_{}.png".format(i))
     Image.fromarray(refocused_front).save("./temp/refocus_front_{}.png".format(i))
     np.save("./temp/syn.npy", syn_lf)
+    """
 
 
 def test_flow(disparity_net, dataset, args):
@@ -192,6 +228,8 @@ def run_inference(disparity_net, refine_net, dataloader, dataset, args):
     ssim_horizontal_avg = AverageMeter()
 
     for i, (stereo_pair, target_lf, row_idx, left_idx, right_idx) in enumerate(dataloader):
+        start_time = time.time()
+
         n = stereo_pair.shape[0] # batch size
         stereo_pair = stereo_pair.permute(0, 3, 1, 2).float()
         target_lf = target_lf.permute(0, 1, 4, 2, 3).float()
@@ -199,6 +237,7 @@ def run_inference(disparity_net, refine_net, dataloader, dataset, args):
         right_idx = right_idx.float()
         row_idx = row_idx.float()
         if torch.cuda.is_available() and args.gpu_id >= 0:
+            print("moving to cuda")
             stereo_pair = stereo_pair.cuda()
             target_lf = target_lf.cuda()
             left_idx = left_idx.cuda()
@@ -243,26 +282,26 @@ def run_inference(disparity_net, refine_net, dataloader, dataset, args):
         total_time += time.time()
 
 
-        unit_disp1 = unit_disp1.squeeze().detach().cpu().numpy()
-        unit_disp2 = unit_disp2.squeeze().detach().cpu().numpy()
-        unit_disp1 = (unit_disp1 - np.min(unit_disp1.ravel())) / (np.max(unit_disp1.ravel()) - np.min(unit_disp1.ravel()))
-        unit_disp2 = (unit_disp2 - np.min(unit_disp2.ravel())) / (np.max(unit_disp2.ravel()) - np.min(unit_disp2.ravel()))
-        unit_disp1 = (unit_disp1 * 255).astype(np.uint8)
-        unit_disp2 = (unit_disp2 * 255).astype(np.uint8)
-        Image.fromarray(unit_disp1).save(os.path.join(args.output_dir, "disp_{}_1.png".format(i)))
-        Image.fromarray(unit_disp2).save(os.path.join(args.output_dir, "disp_{}_2.png".format(i)))
-        left_attn = left_attn.squeeze().unsqueeze(1)
+        #unit_disp1 = unit_disp1.squeeze().detach().cpu().numpy()
+        #unit_disp2 = unit_disp2.squeeze().detach().cpu().numpy()
+        #unit_disp1 = (unit_disp1 - np.min(unit_disp1.ravel())) / (np.max(unit_disp1.ravel()) - np.min(unit_disp1.ravel()))
+        #unit_disp2 = (unit_disp2 - np.min(unit_disp2.ravel())) / (np.max(unit_disp2.ravel()) - np.min(unit_disp2.ravel()))
+        #unit_disp1 = (unit_disp1 * 255).astype(np.uint8)
+        #unit_disp2 = (unit_disp2 * 255).astype(np.uint8)
+        #Image.fromarray(unit_disp1).save(os.path.join(args.output_dir, "disp_{}_1.png".format(i)))
+        #Image.fromarray(unit_disp2).save(os.path.join(args.output_dir, "disp_{}_2.png".format(i)))
+        #left_attn = left_attn.squeeze().unsqueeze(1)
         #tv_save_image(left_attn, "./temp/attn_{}.png".format(i))
 
         # save top-left view
-        top_left_syn = syn_lf[0][0, :]
-        tv_save_image(denorm_tanh(top_left_syn), os.path.join(args.output_dir, "tl_syn_{}.png".format(i)))
-        top_left_target = target_lf[0][0, :]
-        tv_save_image(denorm_tanh(top_left_target), os.path.join(args.output_dir, "tl_target_{}.png".format(i)))
-        bottom_right_syn = syn_lf[0][-1, :]
-        tv_save_image(denorm_tanh(bottom_right_syn), os.path.join(args.output_dir, "br_syn_{}.png".format(i)))
-        bottom_right_target = target_lf[0][-1, :]
-        tv_save_image(denorm_tanh(bottom_right_target), os.path.join(args.output_dir, "br_target_{}.png".format(i)))
+        #top_left_syn = syn_lf[0][0, :]
+        #tv_save_image(denorm_tanh(top_left_syn), os.path.join(args.output_dir, "tl_syn_{}.png".format(i)))
+        #top_left_target = target_lf[0][0, :]
+        #tv_save_image(denorm_tanh(top_left_target), os.path.join(args.output_dir, "tl_target_{}.png".format(i)))
+        #bottom_right_syn = syn_lf[0][-1, :]
+        #tv_save_image(denorm_tanh(bottom_right_syn), os.path.join(args.output_dir, "br_syn_{}.png".format(i)))
+        #bottom_right_target = target_lf[0][-1, :]
+        #tv_save_image(denorm_tanh(bottom_right_target), os.path.join(args.output_dir, "br_target_{}.png".format(i)))
 
 
         syn_lf = syn_lf.detach().cpu().numpy()
@@ -287,19 +326,19 @@ def run_inference(disparity_net, refine_net, dataloader, dataset, args):
         psnr_h = metrics.psnr(syn_middle_row, target_middle_row)
         ssim_h = metrics.ssim(syn_middle_row, target_middle_row)
 
-        syn_lf = (syn_lf + 1) * 0.5
+        #syn_lf = (syn_lf + 1) * 0.5
         #np.save('./temp/syn_{}.npy'.format(i), syn_lf)
-        syn_lf = np.transpose(syn_lf[0], (0, 2, 3, 1))
-        syn_lf = np.reshape(syn_lf, (dataset.lf_res, dataset.lf_res, *syn_lf.shape[1:]))
-        refocused_back = refocus(syn_lf, 0.5)
-        refocused_front = refocus(syn_lf, -0.5)
-        Image.fromarray(refocused_back).save(os.path.join(args.save_dir, "refocus_back_{}.png".format(i)))
-        Image.fromarray(refocused_front).save(os.path.join(args.save_dir, "refocus_front_{}.png".format(i)))
+        #syn_lf = np.transpose(syn_lf[0], (0, 2, 3, 1))
+        #syn_lf = np.reshape(syn_lf, (dataset.lf_res, dataset.lf_res, *syn_lf.shape[1:]))
+        #refocused_back = refocus(syn_lf, 0.5)
+        #refocused_front = refocus(syn_lf, -0.5)
+        #Image.fromarray(refocused_back).save(os.path.join(args.save_dir, "refocus_back_{}.png".format(i)))
+        #Image.fromarray(refocused_front).save(os.path.join(args.save_dir, "refocus_front_{}.png".format(i)))
 
-        target_lf = (target_lf + 1) * 0.5
-        coarse_lf_left = (coarse_lf_left + 1) * 0.5
-        coarse_lf_right = (coarse_lf_right + 1) * 0.5
-        merged_lf = (merged_lf + 1) * 0.5
+        #target_lf = (target_lf + 1) * 0.5
+        #coarse_lf_left = (coarse_lf_left + 1) * 0.5
+        #coarse_lf_right = (coarse_lf_right + 1) * 0.5
+        #merged_lf = (merged_lf + 1) * 0.5
 
         # lf left right check
         #np.save('./temp/target_{}.npy'.format(i), target_lf)
@@ -314,6 +353,7 @@ def run_inference(disparity_net, refine_net, dataloader, dataset, args):
         ssim_avg.update(ssim, n)
         psnr_horizontal_avg.update(psnr_h, n)
         ssim_horizontal_avg.update(ssim_h, n)
+        #print("Time, ", time.time() - start_time)
 
     avg_time = total_time / len(dataset)
     print("Average PSNR: ", psnr_avg.avg)
@@ -361,10 +401,10 @@ def test():
         os.mkdir(args.output_dir)
 
     # Prepare datasets
-    dataset, dataloader = get_dataset_and_loader(args, train=False)
+    #dataset, dataloader = get_dataset_and_loader(args, train=False)
 
-    args.num_views = dataset.lf_res**2
-    args.lf_res = dataset.lf_res
+    args.num_views = 81#dataset.lf_res**2
+    args.lf_res = 9#dataset.lf_res
     disparity_net, refine_net = get_model(args)
 
 
@@ -378,6 +418,7 @@ def test():
         torch.cuda.set_device(args.gpu_id)
 
     if torch.cuda.is_available() and args.gpu_id >= 0:
+        print("Running using GPU")
         refine_net = refine_net.cuda()
         disparity_net = disparity_net.cuda()
     
@@ -389,10 +430,11 @@ def test():
     elif args.mode == "flow":
         test_flow(disparity_net, dataset, args)
     elif args.mode == "stereo": # HERE. Read in left-right stereo images
-        left_path = "./data/left.jpeg"
-        right_path = "./data/right.jpeg"
-
-        single_stereo(disparity_net, refine_net, left_path, right_path, args)
+        i = 2
+        left_path = f"production/testing_data/hci_testing_data/left_{i}.png"
+        right_path = f"production/testing_data/hci_testing_data/right_{i}.png"
+        single_stereo(disparity_net, refine_net, left_path, right_path, args, i)
+        
     elif args.mode == "data":
         get_testing_data(dataloader)
     elif args.mode == "horizontal":
@@ -402,4 +444,3 @@ def test():
 if __name__ == '__main__':
     with torch.no_grad():
         test()
-

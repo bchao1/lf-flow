@@ -30,6 +30,7 @@ def main():
     parser.add_argument("--save_dir", type=str, default="experiments")
     parser.add_argument("--name", type=str)
     parser.add_argument("--use_epoch", type=int, default=1000)
+    parser.add_argument("--mode", type=str, choices=["2crop", "4crop"])
 
     args = parser.parse_args()
     if args.dataset == 'stanford':
@@ -45,7 +46,10 @@ def main():
     args.lf_res = dataset.lf_res
     args.num_views = args.lf_res**2
 
-    refine_net = Network(in_channels=3*4+1, out_channels=3)
+    if args.mode == "4crop":
+        refine_net = Network(in_channels=3*4+3, out_channels=3) # 3N+3
+    elif args.mode == "2crop":
+        refine_net = Network(in_channels=3*2+3, out_channels=3) # 3N+3
     depth_net = Network(in_channels=args.disparity_levels*2, out_channels=1)
 
     refine_net_path = os.path.join(args.save_dir, "ckpt", "refine_{}.ckpt".format(args.use_epoch))
@@ -53,6 +57,8 @@ def main():
 
     refine_net.load_state_dict(torch.load(refine_net_path, map_location="cpu"))
     depth_net.load_state_dict(torch.load(depth_net_path, map_location="cpu"))
+
+    os.makedirs(f"./temp/4crop/{args.name}_e{args.use_epoch}", exist_ok=True)
 
     if torch.cuda.is_available():
         torch.cuda.set_device(args.gpu_id)
@@ -73,19 +79,21 @@ def main():
         
         corner_views = corner_views.permute(0, 1, 4, 2, 3).float()
         target_lf = target_lf.permute(0, 1, 2, 5, 3, 4).float()
-        
+        print(corner_views.shape)
         if torch.cuda.is_available():
             corner_views = corner_views.cuda()
             target_lf = target_lf.cuda()
         
         psnr_views = 0
         ssim_views = 0
+        syn_views = []
+        target_views = []
         for u in range(dataset.lf_res):
             for v in range(dataset.lf_res):
                 # warping here!
-                print(u, v)
-                target_pos_i = torch.tensor(u).float()
-                target_pos_j = torch.tensor(v).float()
+                #print(u, v)
+                target_pos_i = torch.tensor(u).float().reshape(1, 1)
+                target_pos_j = torch.tensor(v).float().reshape(1, 1)
                 if torch.cuda.is_available():
                     target_pos_i = target_pos_i.cuda()
                     target_pos_j = target_pos_j.cuda()
@@ -94,34 +102,45 @@ def main():
 
                 total_time -= time.time() # critical section
 
-                features = get_input_features(corner_views, target_pos_i, target_pos_j, dataset.lf_res, disparities)
-                depth = depth_net(features) * args.scale_disparity # (b, 1, H, W)
-                coarse_view = warp_to_view(corner_views, target_pos_i, target_pos_j, depth, dataset.lf_res)
+                features = get_input_features(corner_views, target_pos_i, target_pos_j, dataset.lf_res, disparities, args.mode)
+                #print(features.shape)
+                depth = depth_net(features).unsqueeze(0) * args.scale_disparity # (b, 1, H, W)
+                #print(depth.shape)
+                coarse_view = warp_to_view(corner_views, target_pos_i, target_pos_j, depth, dataset.lf_res, args.mode)
 
-                joined = torch.cat([coarse_view, depth.unsqueeze(0).unsqueeze(0)], dim=1)   
+                target_pos_i_feat = target_pos_i.reshape(target_pos_i.shape[0], 1, 1, 1).repeat(1, 1, h, w)
+                target_pos_j_feat = target_pos_j.reshape(target_pos_j.shape[0], 1, 1, 1).repeat(1, 1, h, w)
+                joined = torch.cat([coarse_view, depth.unsqueeze(1), target_pos_i_feat, target_pos_j_feat], dim=1) 
                 syn_view = refine_net(joined)
                 
-                if u == 0 and v == 0:
-                    tv_save_image(denorm_tanh(syn_view), os.path.join(args.output_dir, "tl_syn_{}.png".format(i)))
-                    tv_save_image(denorm_tanh(target_view), os.path.join(args.output_dir, "tl_target_{}.png".format(i)))
-                elif u == args.lf_res - 1 and v == args.lf_res - 1:
-                    tv_save_image(denorm_tanh(syn_view), os.path.join(args.output_dir, "br_syn_{}.png".format(i)))
-                    tv_save_image(denorm_tanh(target_view), os.path.join(args.output_dir, "br_target_{}.png".format(i)))
 
                 total_time += time.time()
 
                 syn_view = syn_view.detach().cpu().numpy()
                 target_view = target_view.detach().cpu().numpy().squeeze()
+                
+                syn_view = denorm_tanh(syn_view)
+                target_view = denorm_tanh(target_view)
+
+                syn_views.append(np.transpose(syn_view, (1, 2, 0)))
+                target_views.append(np.transpose(target_view, (1, 2, 0)))
 
                 psnr = metrics.psnr(syn_view, target_view)
                 ssim = metrics.ssim(syn_view, target_view, mode = 1)
                 
                 psnr_views += psnr
                 ssim_views += ssim
+        
+        lf_psnr = psnr_views / args.num_views
+        lf_ssim = ssim_views / args.num_views
 
-        psnr_avg.update(psnr_views / args.num_views, n)
-        ssim_avg.update(ssim_views / args.num_views, n)
-        print("PSNR: ", psnr, " | SSIM: ", ssim)
+        psnr_avg.update(lf_psnr, n)
+        ssim_avg.update(lf_ssim, n)
+        print("PSNR: ", lf_psnr, " | SSIM: ", lf_ssim)
+            
+        
+        syn_views = [Image.fromarray((view*255).astype(np.uint8)) for view in syn_views]
+        syn_views[0].save(f"./temp/4crop/{args.name}_e{args.use_epoch}/lf{i}.gif", save_all=True, append_images=syn_views[1:], duration=100, loop=0)
 
     avg_time = total_time / len(dataset)
     print("Average PSNR: ", psnr_avg.avg)

@@ -5,6 +5,7 @@ from image_utils import crop_lf, resize_lf, resize_lf_ratio
 from image_utils import sample_lf_index, sample_stereo_index
 from image_utils import save_image
 from utils import denorm_tanh
+from PIL import Image
 
 class LFDataset:
     """ All light field dataset inherits this base dataset """ 
@@ -76,11 +77,22 @@ class LFDataset:
             center_image = lf[self._lf_size // 2, self._lf_size // 2]
             target_lf = lf.view(self._lf_size * self._lf_size, *lf.shape[2:])
             return center_image, target_lf
-        else: # 4-crops
+        elif self.mode == "4crop": # 4-crops
             # get 4 corner crops
             corner_i = [0, 0, self.lf_res - 1, self.lf_res - 1]
             corner_j = [0, self.lf_res - 1, 0, self.lf_res - 1]
             corner_views = lf[corner_i, corner_j] # (4, h, w, 3)
+            if self.train:
+                target_i = np.random.randint(self.lf_res)
+                target_j = np.random.randint(self.lf_res)
+                target_view = lf[target_i, target_j]
+                return corner_views, target_view, target_i, target_j
+            else:
+                return corner_views, lf
+        elif self.mode == "2crop":
+            corner_i = [self.lf_res // 2, self.lf_res // 2]
+            corner_j = [0, self.lf_res - 1]
+            corner_views = lf[corner_i, corner_j] # (2, h, w, 3)
             if self.train:
                 target_i = np.random.randint(self.lf_res)
                 target_j = np.random.randint(self.lf_res)
@@ -97,7 +109,7 @@ class HCIDataset(LFDataset):
         super(HCIDataset, self).__init__(root, train, im_size, transform, use_crop, mode)
         self.dataset_parts = list(self.dataset.keys())
         self._lf_size = 9 # lf resolution
-        assert set(self.dataset_parts) == set(['additional', 'test', 'training'])
+        assert set(self.dataset_parts) == set(['test', 'train'])
         if not use_all:
             if self.train:
                 self.dataset_parts.remove('test')  # use 'additional' and 'training' as training data
@@ -170,10 +182,16 @@ def test_dataset(dataset, train):
         dataset = StanfordDataset(root="../../../mnt/data2/bchao/lf/stanford/dataset.h5", im_size=128)
     elif dataset == 'inria':
         dataset = INRIADataset(root="../../../mnt/data2/bchao/lf/inria/Dataset_Lytro1G/dataset.h5", train=train)
-    print(len(dataset))
-    lf = dataset.get_single_lf(0)
-    np.save("sample_lf.npy", lf)
+    #print(len(dataset))
+    #for i in range(len(dataset)):
+    #    lf = dataset.get_single_lf(i)
+    #    view = lf[0, 0]
+    #    Image.fromarray(view).save("./imgs/{}.png".format(i))
+    lf = dataset.get_single_lf(15)
+    lf = lf.reshape(lf.shape[0] * lf.shape[1], *lf.shape[2:])
+    for i, view in enumerate(lf):
+        Image.fromarray(view).save("./imgs/{}.png".format(i))
 
 if __name__ == "__main__":
-    test_dataset("hci", True)
+    test_dataset("inria", False)
     

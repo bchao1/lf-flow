@@ -1,3 +1,4 @@
-hci: ../../../../mnt/data2/bchao/lf/hci/full_data
+hci: /mnt/data2/bchao/lf/hci/data/
 stanford: ../../../../mnt/data2/bchao/lf/stanford/
 inria: ../../../../mnt/data2/bchao/lf/inria/Dataset_Lytro1G/
+inria_dlfd: /mnt/data2/bchao/lf/Inria_syn_lf_datasets/DLFD/

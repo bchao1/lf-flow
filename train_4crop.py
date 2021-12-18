@@ -9,7 +9,9 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 from torch.utils.data import DataLoader
+from torch.utils.tensorboard import SummaryWriter
 
+import torchvision
 from torchvision.utils import save_image as tv_save_image
 import torchvision.transforms as tv_transforms
 
@@ -17,7 +19,7 @@ from argparse import ArgumentParser
 
 from lf_datasets import HCIDataset, INRIADataset, StanfordDataset
 from utils import warp_image_batch, generate_lf_batch_single_image
-from utils import plot_loss_logs
+from utils import plot_loss_logs, AverageMeter
 from utils import denorm_tanh, normalize
 from utils import compute_alpha_blending, get_weight_map
 from image_utils import lf_to_multiview, save_image
@@ -36,34 +38,23 @@ def get_dataset_and_loader(args, train):
 
     if args.dataset == 'hci':
         dataset = HCIDataset(
-            root = "../../../mnt/data2/bchao/lf/hci/full_data/dataset.h5",
+            root = "/mnt/data2/bchao/lf/hci/data/dataset.h5",
             train = train,
             im_size = args.imsize,
             transform = transform,
             use_all = False,
             use_crop = args.use_crop,
-            mode = "4crop"
+            mode = args.mode
         )
     elif args.dataset == 'inria':
         dataset = INRIADataset(
-            root = "../../../mnt/data2/bchao/lf/inria/Dataset_Lytro1G/dataset.h5", 
+            root = "/mnt/data2/bchao/lf/inria/Dataset_Lytro1G/dataset.h5", 
             train = train,
             im_size = args.imsize,
             transform = transform,
             use_all = False,
             use_crop = args.use_crop,
-            mode = "4crop"
-        )
-    elif args.dataset == 'stanford':
-        if args.fold is None:
-            raise ValueError("Please specify fold for Stanford Dataset!")
-        dataset = StanfordDataset(
-            root = "../../../mnt/data2/bchao/lf/stanford/dataset.h5",
-            train = train,
-            im_size = args.imsize,
-            transform = transform,
-            fold = args.fold,
-            mode = "4crop"
+            mode = args.mode
         )
     else:
         raise ValueError("dataset [{}] not supported".format(args.dataset))
@@ -71,14 +62,17 @@ def get_dataset_and_loader(args, train):
     dataloader = DataLoader(dataset, batch_size=args.batch_size, shuffle=train, drop_last=False)
     return dataset, dataloader
     
-def get_input_features(corner_views, target_i, target_j, lf_res, disparity_levels):
+def get_input_features(corner_views, target_i, target_j, lf_res, disparity_levels, mode):
     # corner views (b, 4, 3, h, w)
     # target view (b, 3, h, w)
     # target i b,
     # target j b, 
     # disparities L
     b, _, _, h, w = corner_views.shape
-    corner_indices = [(0, 0), (0, lf_res - 1), (lf_res - 1, 0), (lf_res - 1, lf_res - 1)]
+    if mode == "4crop":
+        corner_indices = [(0, 0), (0, lf_res - 1), (lf_res - 1, 0), (lf_res - 1, lf_res - 1)]
+    elif mode == "2crop":
+        corner_indices = [(lf_res // 2, 0), (lf_res // 2, 0)]
 
     means = []
     stds = []
@@ -103,9 +97,12 @@ def get_input_features(corner_views, target_i, target_j, lf_res, disparity_level
     feat = torch.cat([means, stds], dim=1)
     return feat
 
-def warp_to_view(corner_views, target_i, target_j, disp, lf_res):
+def warp_to_view(corner_views, target_i, target_j, disp, lf_res, mode):
     b, _, _, h, w = corner_views.shape
-    corner_indices = [(0, 0), (0, lf_res - 1), (lf_res - 1, 0), (lf_res - 1, lf_res - 1)]
+    if mode == "4crop":
+        corner_indices = [(0, 0), (0, lf_res - 1), (lf_res - 1, 0), (lf_res - 1, lf_res - 1)]
+    elif mode == "2crop":
+        corner_indices = [(lf_res // 2, 0), (lf_res // 2, 0)]
     warped = []
     for idx, (i, j) in enumerate(corner_indices):
         shift_i = target_i - i
@@ -119,6 +116,8 @@ def warp_to_view(corner_views, target_i, target_j, disp, lf_res):
     return warped
 
 def main():
+    writer = SummaryWriter()
+
     parser = ArgumentParser()
     
     # train setting
@@ -133,6 +132,7 @@ def main():
     parser.add_argument("--disparity_levels", type=int, default=100) # specified in paper
     parser.add_argument("--scale_disparity", type=float, default=4)
     parser.add_argument("--use_crop", action="store_true")
+    parser.add_argument("--mode", type=str, choices=["2crop", "4crop"])
 
     # Losses and regularizations
 
@@ -171,8 +171,11 @@ def main():
     else:
         raise ValueError("Reconstruction loss {} not supported!".format(args.recon_loss))
 
-    refine_net = Network(in_channels=3*4+1, out_channels=3)
-    depth_net = Network(in_channels=args.disparity_levels*2, out_channels=1)
+    if args.mode == "4crop":
+        refine_net = Network(in_channels=3*4+3, out_channels=3) # 3N+3
+    elif args.mode == "2crop":
+        refine_net = Network(in_channels=3*2+3, out_channels=3) # 3N+3
+    depth_net = Network(in_channels=args.disparity_levels*2, out_channels=1) # 2*L
 
     if torch.cuda.is_available():
         torch.cuda.set_device(args.gpu_id)
@@ -189,8 +192,10 @@ def main():
 
     disparities = torch.linspace(-args.max_disparity, args.max_disparity, args.disparity_levels)
     loss_log = []
+    
     for e in range(1, args.train_epochs + 1):
         start = time.time()
+        epoch_loss = AverageMeter()
         for i, (corner_views, target_view, target_pos_i, target_pos_j) in enumerate(dataloader):
             n, _, h, w, _ = corner_views.shape
             
@@ -204,15 +209,18 @@ def main():
                 target_pos_j = target_pos_j.cuda()
 
             # warping here!
-            features = get_input_features(corner_views, target_pos_i, target_pos_j, dataset.lf_res, disparities)
+            features = get_input_features(corner_views, target_pos_i, target_pos_j, dataset.lf_res, disparities, args.mode)
 
             depth = depth_net(features) * args.scale_disparity # (b, 1, H, W)
-            coarse_view = warp_to_view(corner_views, target_pos_i, target_pos_j, depth, dataset.lf_res)
+            coarse_view = warp_to_view(corner_views, target_pos_i, target_pos_j, depth, dataset.lf_res, args.mode)
 
-            joined = torch.cat([coarse_view, depth.unsqueeze(1)], dim=1)   
+            target_pos_i_feat = target_pos_i.reshape(target_pos_i.shape[0], 1, 1, 1).repeat(1, 1, h, w)
+            target_pos_j_feat = target_pos_j.reshape(target_pos_j.shape[0], 1, 1, 1).repeat(1, 1, h, w)
+            joined = torch.cat([coarse_view, depth.unsqueeze(1), target_pos_i_feat, target_pos_j_feat], dim=1) 
             syn_view = refine_net(joined)
 
             loss = criterion(syn_view, target_view)
+            #err = ((syn_view - target_view)**2).mean(1)
 
             optimizer_refine.zero_grad()
             optimizer_depth.zero_grad()
@@ -225,13 +233,15 @@ def main():
                 e, i, loss.item()
             ))
 
-        plot_loss_logs(loss_log, "loss", os.path.join(args.save_dir, 'plots'))
+            epoch_loss.update(loss.item())
+
+        #plot_loss_logs(loss_log, "loss", os.path.join(args.save_dir, 'plots'))
+        writer.add_scalar("loss", epoch_loss.avg, e)
+        writer.add_images("syn_view", denorm_tanh(syn_view), e)
+        writer.add_images("target_view", denorm_tanh(target_view), e)
+        
+
         if e % args.save_epochs == 0:
-            # checkpointing
-            #np.save(os.path.join(args.save_dir, "results", "syn_lf_{}.npy".format(e)), syn_lf[0].detach().cpu().numpy())
-            #np.save(os.path.join(args.save_dir, "results", "target_lf_{}.npy".format(e)), target_lf[0].detach().cpu().numpy())
-            #np.save(os.path.join(args.save_dir, "disp1_{}.npy".format(e)), disp1.detach().cpu().numpy())
-            #np.save(os.path.join(args.save_dir, "disp2_{}.npy".format(e)), disp2.detach().cpu().numpy())
             torch.save(refine_net.state_dict(), os.path.join(args.save_dir, "ckpt", "refine_{}.ckpt".format(e)))
             torch.save(depth_net.state_dict(), os.path.join(args.save_dir, "ckpt", "depth_{}.ckpt".format(e)))
             

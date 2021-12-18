@@ -94,6 +94,7 @@ def ssl_train_views(lf, syn_combs, net):
     sampled_sparse_views = dense_row_views[:, :, syn_sparse_indices, :, :]
     interp_views = F.interpolate(sampled_sparse_views, (syn_views, h, w))
     target_views = dense_row_views[:, :, syn_sparse_indices[0]:syn_sparse_indices[-1] + 1, :, :]
+    return interp_views, target_views
 
 if __name__ == "__main__":
     
@@ -115,9 +116,9 @@ if __name__ == "__main__":
         lf = lf.cuda()
 
     # SSL training
-    ssl_train_views(lf, syn_combs, h_net)  # horizontal
-    lf = torch.transpose(lf, 1, 2) # transpose angular dimensions -> also transpose spatial?
-    ssl_train_views(lf, syn_combs, v_net)  # vertical
+    syn_h_views, target_h_views = ssl_train_views(lf, syn_combs, h_net)  # horizontal
+    lf = torch.transpose(lf, 1, 2) # transpose angular dimensions (u, v) -> also transpose spatial?
+    syn_v_views, target_v_views = ssl_train_views(lf, syn_combs, v_net)  # vertical
     
 
     # Metric between interpolated views and target views

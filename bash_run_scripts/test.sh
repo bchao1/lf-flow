@@ -1,22 +1,24 @@
 #!/bin/bash
 cd ..
 
-imsize="504"
-max_disparity="90"
-dataset="stanford"
+imsize="371"
+max_disparity="15"
+dataset="inria"
+save_dir="../../../../mnt/data2/bchao/lf_stereo_experiments/experiments/"
+name="recon_l1_best_shuffle"
+mode="normal"
 
 python3.7 test.py --imsize $imsize --batch_size 1 \
     --max_disparity $max_disparity \
     --dataset $dataset \
-    --save_dir experiments \
-    --name best \
+    --save_dir $save_dir \
+    --name $name \
     --use_epoch 2000 \
     --disp_model original \
     --gpu_id 1 \
     --merge_method alpha \
     --refine_model shuffle \
-    --mode horizontal \
-    --fold 0
+    --mode $mode
 
 # hci and inria
 #python3.7 test.py --imsize $imsize --batch_size 1 \

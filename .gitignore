@@ -2,4 +2,7 @@ temp/*
 experiments*/*
 data/*
 production/*
+runs/
+**/__pycache__/
+__pycache__/
 

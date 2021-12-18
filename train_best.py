@@ -25,7 +25,6 @@ from image_utils import lf_to_multiview, save_image
 from image_utils import sobel_filter_batch, sample_stereo_index
 from metrics import ColorConstancyLoss, WeightedReconstructionLoss, TVLoss
 
-import models.flownet2.models as flownet_models
 # import here! lfnet of ver2
 from models.lf_net import LFRefineNet, LFRefineNetV2, DisparityNet
 import transforms
@@ -114,17 +113,6 @@ def merge_lf(row_idx, left_idx, right_idx, left, right, left_attn, lf_res, metho
         print("Merge method {} not supported".format(method))
     return merged_lf
 
-def predict_rot_flow(view1, view2, stereo_ratio, dispartiy_net, rev, max_disp):
-    batch = torch.cat([view1, view2], dim=1)
-    n = batch.shape[0]
-    flow, attn = dispartiy_net(batch)
-    flow = flow * max_disp # scale [-1, -1] to [-max_disp, max_disp]
-    if rev:
-        flow = flow * -1
-    unit_flow = flow / stereo_ratio.view(n, 1, 1, 1) # scale the flow to unit step
-    return unit_flow
-
-
 def synthesize_lf_and_stereo(view1, view2, row_idx, view1_idx, stereo_ratio, lf_res, dispartiy_net, rev, args):
     batch = torch.cat([view1, view2], dim=1)
     n = batch.shape[0]
@@ -140,6 +128,7 @@ def synthesize_lf_and_stereo(view1, view2, row_idx, view1_idx, stereo_ratio, lf_
     # test here!
     if rev:
         flow = flow * -1
+    
     unit_flow = flow / stereo_ratio.view(n, 1, 1, 1) # scale the flow to unit step
     #empty_flow = torch.zeros_like(flow)
     coarse_lf = generate_lf_batch(view1, row_idx, view1_idx, unit_flow.squeeze(), lf_res, args.scale_baseline)
@@ -168,41 +157,6 @@ def get_syn_stereo_flow(lf, lf_res, dispartiy_net, rev, args):
     unit_flow = flow / (idx2 - idx1)
     return unit_flow
 
-# Flow consistency: PROBLEM
-def warp_flow(unit_disp, row_idx, left_idx, right_idx, dispartiy_net, lf, lf_res, max_disp, rev=False):
-    b, _, c, h, w = lf.shape
-    lf = lf.view(b, lf_res, lf_res, c, h, w)
-    new_row_idx = np.random.randint(lf_res, size=b)
-
-    batch_idx = np.arange(b)
-    left_idx = left_idx.cpu().numpy()
-    right_idx = right_idx.cpu().numpy()
-    stereo_ratio = right_idx - left_idx
-    stereo_ratio = torch.tensor(stereo_ratio).to(lf.device)
-
-    left = lf[batch_idx, new_row_idx, left_idx, :, :, :]
-    right = lf[batch_idx, new_row_idx, right_idx, :, :, :]
-
-    # test left to right or right to left
-    if rev:
-        stereo_pairs = torch.cat([left, right], dim=1)
-    else:
-        stereo_pairs = torch.cat([right, left], dim=1)
-
-    new_disp = dispartiy_net(stereo_pairs) * max_disp
-
-    # negation if right to left
-    if rev:
-        new_disp *= -1
-    new_unit_disp = new_disp / stereo_ratio.view(b, 1, 1, 1)
-
-    row_shift = torch.tensor(new_row_idx).to(row_idx.device) - row_idx
-    row_shift = row_shift.view(b, 1, 1)
-    dx = unit_disp.squeeze() * 0
-    dy = unit_disp.squeeze() * row_shift
-    warped_unit_disp = warp_image_batch(unit_disp, dx, dy)
-    return warped_unit_disp, new_unit_disp
-
 def main():
     parser = ArgumentParser()
     
@@ -228,12 +182,8 @@ def main():
     parser.add_argument("--use_weighted_view", action="store_true")
 
     parser.add_argument("--recon_loss", type=str, choices=['l1', 'l2'], default='l1')
-    parser.add_argument("--edge_loss", type=str, choices=['l1', 'l2'], default='l1')
-    parser.add_argument("--edge_loss_w", type=float, default=0.1)
     parser.add_argument('--consistency_w', type=float, default=1)
-    parser.add_argument('--flow_consistency_w', type=float, default=0.05)
     parser.add_argument("--tv_loss_w", type=float, default=0.01)
-    parser.add_argument("--rot_loss_w", type=float)
     
     parser.add_argument("--gpu_id", type=int, choices=[0, 1], default=0)
     parser.add_argument("--dataset", type=str, choices=['hci', 'stanford', 'inria'], default='hci')
@@ -272,12 +222,6 @@ def main():
     else:
         raise ValueError("Reconstruction loss {} not supported!".format(args.recon_loss))
     
-    if args.edge_loss == 'l1':
-        edge_criterion = WeightedReconstructionLoss(loss_func = nn.L1Loss())
-    elif args.edge_loss == 'l2':
-        edge_criterion = WeightedReconstructionLoss(loss_func = nn.MSELoss())
-    else:
-        raise ValueError("Edge preserving loss {} not supported!".format(args.edge_loss))
     tv_criterion = TVLoss(w = args.tv_loss_w)
 
     args.num_views = dataset.lf_res**2
@@ -300,7 +244,6 @@ def main():
 
         # Loss functions
         criterion = criterion.cuda()
-        edge_criterion = edge_criterion.cuda()
         tv_criterion = tv_criterion.cuda()
         #color_criterion = color_criterion.cuda()
     
@@ -316,7 +259,6 @@ def main():
 
 
     lf_loss_log = []
-    edge_loss_log = []
     #stereo, target_lf, left_idx, right_idx = next(iter(dataloader))
     for e in range(1, args.train_epochs + 1):
         start = time.time()
@@ -349,8 +291,6 @@ def main():
             
             left = stereo_pair[:, :3, :, :]
             right = stereo_pair[:, 3:, :, :]
-            left_rot90 = torch.rot90(left, 1, [2, 3])
-            right_rot90 = torch.rot90(right, 1, [2, 3])
 
             stereo_ratio = right_idx - left_idx # positive shear value
 
@@ -363,16 +303,6 @@ def main():
                 dispartiy_net, True, args
             )
 
-            #unit_disp1_rot90_predict = predict_rot_flow(
-            #    left_rot90, right_rot90, stereo_ratio, dispartiy_net, False, args.max_disparity
-            #)
-            #unit_disp2_rot90_predict = predict_rot_flow(
-            #    right_rot90, left_rot90, stereo_ratio, dispartiy_net, True, args.max_disparity
-            #)
-            #unit_disp1_rot90_target = torch.rot90(unit_disp1, 1, [2, 3])
-            #unit_disp2_rot90_target = torch.rot90(unit_disp2, 1, [2, 3])
-
-            
             
             left_attn2 = 1 - right_attn2 
             left_attn = (left_attn1 + left_attn2) * 0.5 # (b, num_views, h, w)
@@ -380,14 +310,6 @@ def main():
 
             merged_lf = merge_lf(row_idx, left_idx, right_idx, 
                 coarse_lf_left, coarse_lf_right, left_attn, dataset.lf_res, args.merge_method)
-
-            # flow-consistency loss
-            #warped_flow1, new_flow1 = warp_flow(unit_disp1, 
-            #    row_idx, left_idx, right_idx, 
-            #    dispartiy_net, target_lf, dataset.lf_res, args.max_disparity, False)
-            #warped_flow2, new_flow2 = warp_flow(unit_disp2, 
-            #    row_idx, left_idx, right_idx, 
-            #    dispartiy_net, target_lf, dataset.lf_res, args.max_disparity, True)
 
             if args.refine_model == "concat":
                 stack_disp1 = torch.cat([unit_disp1] * 3, dim=1).unsqueeze(1)
@@ -402,12 +324,10 @@ def main():
                 weight_map = get_weight_map(row_idx, left_idx, right_idx, dataset.lf_res)
             
             lf_loss = criterion(syn_lf, target_lf, weight_map)
-            flow_consistency_loss = torch.tensor(0.0)#(criterion(warped_flow1, new_flow1, 1) + criterion(warped_flow2, new_flow2, 1)) * args.flow_consistency_w
             consistency_loss = (criterion(coarse_lf_left, target_lf, 1) + criterion(coarse_lf_right, target_lf, 1)) * 0.5 * args.consistency_w
             tv_loss = tv_criterion(unit_disp1) + tv_criterion(unit_disp2)
-            rot_loss = torch.tensor(0)#(criterion(unit_disp1_rot90_predict, unit_disp1_rot90_target, 1) + criterion(unit_disp2_rot90_predict, unit_disp2_rot90_target)) * 0.5 * args.rot_loss_w
 
-            loss = lf_loss + consistency_loss + flow_consistency_loss + tv_loss + rot_loss
+            loss = lf_loss + consistency_loss + tv_loss
         
 
             optimizer_refine.zero_grad()
@@ -417,8 +337,8 @@ def main():
             optimizer_disp.step()
 
             lf_loss_log.append(lf_loss.item())
-            print("Epoch {:5d}, iter {:2d} | consistency: {:10f} | rot {:10f} | lf {:10f} | tv {:10f}".format(
-                e, i, consistency_loss.item(), rot_loss.item(), lf_loss.item(), tv_loss.item()
+            print("Epoch {:5d}, iter {:2d} | consistency: {:10f} | lf {:10f} | tv {:10f}".format(
+                e, i, consistency_loss.item(), lf_loss.item(), tv_loss.item()
             ))
 
         plot_loss_logs(lf_loss_log, "lf_loss", os.path.join(args.save_dir, 'plots'))

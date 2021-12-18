@@ -1,18 +1,18 @@
 #!/bin/bash
 cd ..
 # HCI max disparity = 4!
-python3 train_best.py --imsize 135 --batch_size 10 \
-    --save_epochs 500 \
-    --train_epochs 2000 \
-    --lr 0.001 \
+python3 train_best.py --imsize 135 --batch_size 6 \
+    --save_epochs 1000 \
+    --train_epochs 10000 \
+    --lr 0.0002 \
     --max_disparity 4 \
     --consistency_w 1 \
     --tv_loss_w 0.001 \
     --recon_loss l1 \
-    --gpu_id 1 \
+    --gpu_id 0 \
     --dataset hci \
     --save_dir experiments \
-    --name 20211217 \
+    --name 20211218_1230 \
     --use_crop \
     --merge_method alpha \
     --refine_model shuffle

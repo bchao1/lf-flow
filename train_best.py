@@ -14,13 +14,14 @@ from torchvision.utils import save_image as tv_save_image
 import torchvision.transforms as tv_transforms
 
 from argparse import ArgumentParser
+from tqdm import tqdm
 
 from lf_datasets import HCIDataset, INRIADataset, StanfordDataset
 from utils import warp_image_batch, generate_lf_batch
 from utils import plot_loss_logs
 from utils import denorm_tanh, normalize
 from utils import compute_alpha_blending, get_weight_map
-from utils import Dummy
+from utils import Dummy, AverageMeter
 from image_utils import lf_to_multiview, save_image
 from image_utils import sobel_filter_batch, sample_stereo_index
 from metrics import ColorConstancyLoss, WeightedReconstructionLoss, TVLoss
@@ -28,6 +29,7 @@ from metrics import ColorConstancyLoss, WeightedReconstructionLoss, TVLoss
 # import here! lfnet of ver2
 from models.lf_net import LFRefineNet, LFRefineNetV2, DisparityNet
 import transforms
+from torch.utils.tensorboard import SummaryWriter
 
 def get_model(args):
     if args.refine_model == "concat":
@@ -64,7 +66,7 @@ def get_dataset_and_loader(args, train):
 
     if args.dataset == 'hci':
         dataset = HCIDataset(
-            root = "../../../mnt/data2/bchao/lf/hci/full_data/dataset.h5",
+            root = "/mnt/data2/bchao/lf/hci/data/dataset.h5",
             train = train,
             im_size = args.imsize,
             transform = transform,
@@ -73,28 +75,17 @@ def get_dataset_and_loader(args, train):
         )
     elif args.dataset == 'inria':
         dataset = INRIADataset(
-            root = "../../../mnt/data2/bchao/lf/inria/Dataset_Lytro1G/dataset.h5", 
+            root = "/mnt/data2/bchao/lf/inria/Dataset_Lytro1G/dataset.h5", 
             train = train,
             im_size = args.imsize,
             transform = transform,
             use_all = False,
             use_crop = args.use_crop
         )
-    elif args.dataset == 'stanford':
-        if args.fold is None:
-            raise ValueError("Please specify fold for Stanford Dataset!")
-        dataset = StanfordDataset(
-            root = "../../../mnt/data2/bchao/lf/stanford/dataset.h5",
-            train = train,
-            im_size = args.imsize,
-            transform = transform,
-            fold = args.fold,
-            use_crop = args.use_crop
-        )
     else:
         raise ValueError("dataset [{}] not supported".format(args.dataset))
     print("Dataset size: {}".format(dataset.__len__()))
-    dataloader = DataLoader(dataset, batch_size=args.batch_size, shuffle=train, drop_last=False)
+    dataloader = DataLoader(dataset, batch_size=args.batch_size, shuffle=train, drop_last=False, pin_memory=True, num_workers=16)
     return dataset, dataloader
 
 def merge_lf(row_idx, left_idx, right_idx, left, right, left_attn, lf_res, method):
@@ -157,6 +148,10 @@ def get_syn_stereo_flow(lf, lf_res, dispartiy_net, rev, args):
     unit_flow = flow / (idx2 - idx1)
     return unit_flow
 
+def get_exp_name(args):
+    name = f"{args.dataset}_{args.name}_ref-{args.refine_model}_merge-{args.merge_method}_tv-{args.tv_loss_w}"
+    return name
+
 def main():
     parser = ArgumentParser()
     
@@ -192,6 +187,11 @@ def main():
     parser.add_argument("--name", type=str)
 
     args = parser.parse_args()
+    exp_name = get_exp_name(args)
+
+    writer = SummaryWriter(comment=exp_name)
+
+
     args.stereo_ratio = -1
     args.scale_baseline = 1
     args_dict = vars(args)
@@ -259,22 +259,14 @@ def main():
 
 
     lf_loss_log = []
+    tv_loss_avg = AverageMeter()
+    lf_loss_avg = AverageMeter()
+    consistency_loss_avg = AverageMeter()
     #stereo, target_lf, left_idx, right_idx = next(iter(dataloader))
     for e in range(1, args.train_epochs + 1):
         start = time.time()
-        for i, (stereo_pair, target_lf, row_idx, left_idx, right_idx) in enumerate(dataloader):
+        for i, (stereo_pair, target_lf, row_idx, left_idx, right_idx) in enumerate(tqdm(dataloader)):
             n, h, w, _ = stereo_pair.shape
-            """
-            for j, lf in enumerate(target_lf):
-                lf = lf.numpy()
-                lf = lf.reshape(dataset.lf_res, dataset.lf_res, *lf.shape[1:])
-                print(lf.shape)
-                lf = (lf + 1) * 0.5
-                mv = lf_to_multiview(lf) # [0, 1]
-                mv = (255 * mv).astype(np.uint8)
-                Image.fromarray(mv).save("./temp/lf{}.png".format(j))
-            exit()
-            """
             stereo_pair = stereo_pair.permute(0, 3, 1, 2).float()
             target_lf = target_lf.permute(0, 1, 4, 2, 3).float()
             
@@ -336,12 +328,33 @@ def main():
             optimizer_refine.step()
             optimizer_disp.step()
 
-            lf_loss_log.append(lf_loss.item())
-            print("Epoch {:5d}, iter {:2d} | consistency: {:10f} | lf {:10f} | tv {:10f}".format(
-                e, i, consistency_loss.item(), lf_loss.item(), tv_loss.item()
-            ))
+            lf_loss_avg.update(lf_loss.item())
+            consistency_loss_avg.update(consistency_loss.item())
+            tv_loss_avg.update(tv_loss.item())
 
-        plot_loss_logs(lf_loss_log, "lf_loss", os.path.join(args.save_dir, 'plots'))
+        print("Epoch {:5d}, iter {:2d} | consistency: {:10f} | lf {:10f} | tv {:10f}".format(
+            e, i, consistency_loss_avg.avg, lf_loss_avg.avg, tv_loss_avg.avg
+        ))
+
+        #plot_loss_logs(lf_loss_log, "lf_loss", os.path.join(args.save_dir, 'plots'))
+        writer.add_scalar("losses/lf", lf_loss_avg.avg, e)
+        writer.add_scalar("losses/tv", tv_loss_avg.avg, e)
+        writer.add_scalar("losses/consistency", consistency_loss_avg.avg, e)
+
+        if e % 100 == 0:
+            disp1 = denorm_tanh(unit_disp1) #[0,1]
+            disp2 = denorm_tanh(unit_disp2) #[0,1]
+            left_lf_view = denorm_tanh(coarse_lf_left[:, 0])
+            right_lf_view = denorm_tanh(coarse_lf_right[:, 0])
+            target_lf_view = denorm_tanh(target_lf[:, 0])
+
+            writer.add_images("disp/l2r", disp1, e)
+            writer.add_images("disp/r2l", disp2, e)
+
+            writer.add_images("views/left", left_lf_view, e)
+            writer.add_images("views/right", right_lf_view, e)
+            writer.add_images("views/target", target_lf_view, e)
+
         if e % args.save_epochs == 0:
             torch.save(refine_net.state_dict(), os.path.join(args.save_dir, "ckpt", "refine_{}.ckpt".format(e)))
             torch.save(dispartiy_net.state_dict(), os.path.join(args.save_dir, "ckpt", "disp_{}.ckpt".format(e)))

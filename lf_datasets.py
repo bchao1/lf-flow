@@ -11,7 +11,7 @@ class LFDataset:
     """ All light field dataset inherits this base dataset """ 
 
     def __init__(self, root, train, im_size, transform, use_crop=False, mode="stereo"):
-        assert mode in ["stereo", "single", "4crop"]
+        assert mode in ["stereo", "single", "4crop", "2crop"]
         self.mode = mode
         self.root = root
         self.train = train

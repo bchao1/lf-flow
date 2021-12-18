@@ -72,7 +72,7 @@ def get_input_features(corner_views, target_i, target_j, lf_res, disparity_level
     if mode == "4crop":
         corner_indices = [(0, 0), (0, lf_res - 1), (lf_res - 1, 0), (lf_res - 1, lf_res - 1)]
     elif mode == "2crop":
-        corner_indices = [(lf_res // 2, 0), (lf_res // 2, 0)]
+        corner_indices = [(lf_res // 2, 0), (lf_res // 2, lf_res - 1)]
 
     means = []
     stds = []
@@ -102,7 +102,7 @@ def warp_to_view(corner_views, target_i, target_j, disp, lf_res, mode):
     if mode == "4crop":
         corner_indices = [(0, 0), (0, lf_res - 1), (lf_res - 1, 0), (lf_res - 1, lf_res - 1)]
     elif mode == "2crop":
-        corner_indices = [(lf_res // 2, 0), (lf_res // 2, 0)]
+        corner_indices = [(lf_res // 2, 0), (lf_res // 2, lf_res - 1)]
     warped = []
     for idx, (i, j) in enumerate(corner_indices):
         shift_i = target_i - i

@@ -182,7 +182,7 @@ def main():
     parser.add_argument('--consistency_w', type=float, default=1)
     parser.add_argument("--tv_loss_w", type=float, default=0.01)
     
-    parser.add_argument("--gpu_id", type=int, choices=[0, 1], default=0)
+    parser.add_argument("--gpu_id", type=int, default=0)
     parser.add_argument("--dataset", type=str, choices=['hci', 'stanford', 'inria'], default='hci')
     parser.add_argument("--fold", default=-1, type=int, choices=list(range(5)), help="Kth-fold for Stanford Dataset")
     parser.add_argument("--save_dir", type=str, default="experiments")

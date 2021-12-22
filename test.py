@@ -303,7 +303,13 @@ def run_inference(disparity_net, refine_net, dataloader, dataset, args):
     print("Average PSNR (horizontal): ", psnr_horizontal_avg.avg)
     print("Average SSIM (horizontal): ", ssim_horizontal_avg.avg)
     print("Average time: ", avg_time)
-
+    with open(f"{args.output_dir}/results.txt", "w") as file:
+        print("Average PSNR: ", psnr_avg.avg, file=file)
+        print("Average SSIM: ", ssim_avg.avg, file=file)
+        print("Average PSNR (horizontal): ", psnr_horizontal_avg.avg, file=file)
+        print("Average SSIM (horizontal): ", ssim_horizontal_avg.avg, file=file)
+        print("Average time: ", avg_time, file=file)
+        
 def test():
 
     parser = ArgumentParser()
@@ -338,9 +344,8 @@ def test():
     if args.stereo_ratio > 0:
         assert(args.stereo_ratio % 2 == 0)
     args.save_dir = os.path.join(args.save_dir, args.dataset, args.name)
-    args.output_dir = os.path.join("./temp", args.name) # save results to here
-    if not os.path.exists(args.output_dir):
-        os.mkdir(args.output_dir)
+    args.output_dir = os.path.join("./temp/mymodel", args.dataset, args.name, str(args.use_epoch)) # save results to here
+    os.makedirs(args.output_dir, exist_ok=True)
 
     # Prepare datasets
     dataset, dataloader = get_dataset_and_loader(args, train=False)

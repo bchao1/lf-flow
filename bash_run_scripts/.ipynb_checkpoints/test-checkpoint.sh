@@ -2,23 +2,26 @@
 cd ..
 
 imsize="504"
-max_disparity="10"
+max_disparity="4"
 dataset="hci"
 save_dir="./experiments/"
-name="20211218_2236"
+name="20211219_1040"
 mode="normal"
 
+for e in 2000 4000 6000 8000 10000
+do
 python3 test.py --imsize $imsize --batch_size 1 \
     --max_disparity $max_disparity \
     --dataset $dataset \
     --save_dir $save_dir \
     --name $name \
-    --use_epoch 4000 \
+    --use_epoch $e \
     --disp_model original \
     --gpu_id 3 \
     --merge_method alpha \
     --refine_model shuffle \
     --mode $mode 
+done
 
 # hci and inria
 #python3.7 test.py --imsize $imsize --batch_size 1 \

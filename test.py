@@ -137,24 +137,23 @@ def get_testing_data(dataloader):
 
 def test_horizontal_views(dataloader, args):
     print(args.dataset)
-    root = "./data/zhang/"
+    root = f"./data/small_baseline_results/{args.dataset}"
     psnr_avg = AverageMeter()
     ssim_avg = AverageMeter()
     for i, (stereo_pair, target_lf, row_idx, left_idx, right_idx) in enumerate(dataloader):
         n = stereo_pair.shape[0]
-        middle_idx = args.lf_res * (args.lf_res // 2)
-        target_middle_row = target_lf[:, middle_idx + 1:middle_idx + args.lf_res, :, :, :]
-        target_middle_row = target_middle_row.cpu().numpy()[0]
-        target_middle_row = (target_middle_row + 1) * 00.5
+        target_lf = target_lf[0].reshape(args.lf_res, args.lf_res, *target_lf.shape[2:])
+        target_middle_row = target_lf[args.lf_res // 2]
+        target_middle_row = denorm_tanh(target_middle_row) # rescale to [0, 1]
+        target_middle_row = target_middle_row.cpu().numpy()
         # read in zhang views
         views = []
         for j in range(1, args.lf_res):
-            filename = "{}_{}_{}.jpeg".format(args.dataset, i, j)
+            filename = "{}_{}.jpeg".format(args.dataset, i, j)
             img = np.array(Image.open(os.path.join(root, filename)))
-            img = img * 1.0 / 255
+            img = img * 1.0 / 255 # rescale to [0, 1]
             views.append(img)
         views = np.stack(views)
-        #views = dataloader.dataset.transform(views).numpy()
 
         views = np.transpose(views, (0, 3, 1, 2))
         target_middle_row = np.transpose(target_middle_row, (0, 3, 1, 2))
@@ -313,12 +312,12 @@ def run_inference(disparity_net, refine_net, dataloader, dataset, args):
 def test():
 
     parser = ArgumentParser()
-    parser.add_argument("--dataset", type=str, choices=['hci', 'stanford', 'inria'])
+    parser.add_argument("--dataset", type=str, choices=['hci', 'inria_lytro', 'inria_dlfd'])
     parser.add_argument("--imsize", type=int)
     parser.add_argument("--batch_size", type=int, default=4)
     parser.add_argument("--save_dir", type=str, default="experiments")
     parser.add_argument("--name", type=str)
-    parser.add_argument("--use_epoch", type=int, default=1000)
+    parser.add_argument("--use_epoch", type=int, default=2000)
     parser.add_argument("--max_disparity", type=float, default=10)
     parser.add_argument("--fold", type=int, default=0)
     parser.add_argument("--concat", action="store_true")

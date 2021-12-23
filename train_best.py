@@ -66,15 +66,25 @@ def get_dataset_and_loader(args, train):
 
     if args.dataset == 'hci':
         dataset = HCIDataset(
-            root = "/mount/data/hci/dataset.h5",
-            #root = "../tcsvt_datasets/hci/dataset.h5",
+            #root = "/mount/data/hci/dataset.h5",
+            root = "/mnt/data2/bchao/lf/tcsvt_datasets/hci/dataset.h5",
             train = train,
             im_size = args.imsize,
             transform = transform,
             use_all = False,
             use_crop = args.use_crop
         )
-    elif args.dataset == 'inria':
+    elif args.dataset == 'inria_dlfd':
+        dataset = INRIADataset(
+            root = "/mount/data/inria_lytro/dataset.h5",
+            #root = "../tcsvt_datasets/inria_real/dataset.h5",
+            train = train,
+            im_size = args.imsize,
+            transform = transform,
+            use_all = False,
+            use_crop = args.use_crop
+        )
+    elif args.dataset == 'inria_lytro':
         dataset = INRIADataset(
             root = "/mount/data/inria_lytro/dataset.h5",
             #root = "../tcsvt_datasets/inria_real/dataset.h5",

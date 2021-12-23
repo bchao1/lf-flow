@@ -66,8 +66,8 @@ def get_dataset_and_loader(args, train):
 
     if args.dataset == 'hci':
         dataset = HCIDataset(
-            #root = "/mnt/data2/bchao/lf/hci/data/dataset.h5",
-            root = "../tcsvt_datasets/hci/dataset.h5",
+            root = "/mount/data/hci/dataset.h5",
+            #root = "../tcsvt_datasets/hci/dataset.h5",
             train = train,
             im_size = args.imsize,
             transform = transform,
@@ -76,8 +76,8 @@ def get_dataset_and_loader(args, train):
         )
     elif args.dataset == 'inria':
         dataset = INRIADataset(
-            #root = "/mnt/data2/bchao/lf/inria/Dataset_Lytro1G/dataset.h5",
-            root = "../tcsvt_datasets/inria_real/dataset.h5",
+            root = "/mount/data/inria_lytro/dataset.h5",
+            #root = "../tcsvt_datasets/inria_real/dataset.h5",
             train = train,
             im_size = args.imsize,
             transform = transform,

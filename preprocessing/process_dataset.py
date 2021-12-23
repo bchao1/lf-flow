@@ -143,14 +143,15 @@ def preprocess_inria_dataset(root):
     file.close()
 
 def test_dataset_h5(name):
-    with open('dataset_config.yaml') as f:
+    with open('config.yaml') as f:
         config = yaml.load(f, Loader=yaml.FullLoader)
+    print(config)
     if name == 'hci':
         test_hci_dataset(root=config['hci'])
     elif name == 'stanford':
         test_stanford_dataset(root=config['stanford'])
-    elif name == 'inria':
-        test_inria_dataset(root=config['inria'])
+    elif name == 'inria_lytro':
+        test_inria_lytro_dataset(root=config['inria_lytro'])
     elif name == "inria_dlfd":
         test_inria_dlfd_dataset(root=config['inria_dlfd'])
     else:
@@ -171,7 +172,7 @@ def test_stanford_dataset(root):
     print("Lf size: {}".format(data.shape))
     print("Access h5 file time : {}".format(time.time() - start))
 
-def test_inria_dataset(root):
+def test_inria_lytro_dataset(root):
     start = time.time()
     file = h5py.File(os.path.join(root, 'dataset.h5'), 'r')
     print(file.keys())
@@ -187,6 +188,31 @@ def test_inria_dlfd_dataset(root):
     print("Lf size: {}".format(data.shape))
     print("Access h5 file time : {}".format(time.time() - start))
 
+def save_stereo(save_root, dataset_name):
+    with open('config.yaml') as f:
+        config = yaml.load(f, Loader=yaml.FullLoader)
+    os.makedirs(os.path.join(save_root, dataset_name), exist_ok=True)
+    file = h5py.File(os.path.join(config[dataset_name], 'dataset.h5'), 'r')
+
+    if dataset_name == "hci" or dataset_name == "inria_dlfd":
+        test_data = file["test"]
+    elif dataset_name == "inria_lytro":
+        test_data = file["Testing"]
+
+    for i, lf_name in enumerate(list(test_data.keys())):
+        data = test_data[lf_name][()]
+        lf_res = data.shape[0]
+        left = data[lf_res // 2, lf_res // 2]
+        right = data[lf_res // 2, lf_res // 2 + 1]
+        Image.fromarray(left).save(os.path.join(save_root, dataset_name, f"{i}_left.png"))
+        Image.fromarray(right).save(os.path.join(save_root, dataset_name, f"{i}_right.png"))
+
+        
+
+
 if __name__ == '__main__':
-    preprocess_lf_dataset('hci')
-    test_dataset_h5('hci')
+    #preprocess_lf_dataset('hci')
+    #test_dataset_h5('inria_dlfd')
+    save_stereo("../data/zhang_data", "inria_dlfd")
+    save_stereo("../data/zhang_data", "inria_lytro")
+    save_stereo("../data/zhang_data", "hci")

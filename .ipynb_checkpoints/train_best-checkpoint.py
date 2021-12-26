@@ -67,14 +67,24 @@ def get_dataset_and_loader(args, train):
     if args.dataset == 'hci':
         dataset = HCIDataset(
             root = "/mount/data/hci/dataset.h5",
-            #root = "../tcsvt_datasets/hci/dataset.h5",
+            #root = "/mnt/data2/bchao/lf/tcsvt_datasets/hci/dataset.h5",
             train = train,
             im_size = args.imsize,
             transform = transform,
             use_all = False,
             use_crop = args.use_crop
         )
-    elif args.dataset == 'inria':
+    elif args.dataset == 'inria_dlfd':
+        dataset = INRIADataset(
+            root = "/mount/data/inria_lytro/dataset.h5",
+            #root = "../tcsvt_datasets/inria_real/dataset.h5",
+            train = train,
+            im_size = args.imsize,
+            transform = transform,
+            use_all = False,
+            use_crop = args.use_crop
+        )
+    elif args.dataset == 'inria_lytro':
         dataset = INRIADataset(
             root = "/mount/data/inria_lytro/dataset.h5",
             #root = "../tcsvt_datasets/inria_real/dataset.h5",
@@ -183,7 +193,7 @@ def main():
     parser.add_argument("--tv_loss_w", type=float, default=0.01)
     
     parser.add_argument("--gpu_id", type=int, default=0)
-    parser.add_argument("--dataset", type=str, choices=['hci', 'stanford', 'inria'], default='hci')
+    parser.add_argument("--dataset", type=str, choices=['hci', 'inria_lytro', 'inria_dlfd'], default='hci')
     parser.add_argument("--fold", default=-1, type=int, choices=list(range(5)), help="Kth-fold for Stanford Dataset")
     parser.add_argument("--save_dir", type=str, default="experiments")
     parser.add_argument("--name", type=str)

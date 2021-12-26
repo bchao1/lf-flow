@@ -2,14 +2,15 @@
 cd ..
 
 imsize="504"
-max_disparity="4"
+max_disparity="32"
 dataset="hci"
-save_dir="./experiments/"
-name="20211219_1040"
+save_dir="../2477845"
+name="20211224_1128_tv_0.1"
 mode="normal"
 
 for e in 2000 4000 6000 8000 10000
 do
+echo $e
 python3 test.py --imsize $imsize --batch_size 1 \
     --max_disparity $max_disparity \
     --dataset $dataset \
@@ -17,7 +18,7 @@ python3 test.py --imsize $imsize --batch_size 1 \
     --name $name \
     --use_epoch $e \
     --disp_model original \
-    --gpu_id 3 \
+    --gpu_id 0 \
     --merge_method alpha \
     --refine_model shuffle \
     --mode $mode 

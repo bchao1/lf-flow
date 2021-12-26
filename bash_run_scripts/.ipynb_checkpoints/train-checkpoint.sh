@@ -1,50 +1,122 @@
 #!/bin/bash
 cd ..
-# Set max disparity = 10!
+
+# DLFD (4+1) * 8 =40
 python3 train_best.py --imsize 135 --batch_size 10 \
     --save_epochs 1000 \
     --train_epochs 10000 \
     --lr 0.001 \
-    --max_disparity 10 \
+    --max_disparity 40 \
+    --consistency_w 1 \
+    --tv_loss_w 0.001 \
+    --recon_loss l1 \
+    --gpu_id 6 \
+    --dataset inria_dlfd \
+    --save_dir /results \
+    --name 20211226_1428_final \
+    --use_crop \
+    --merge_method alpha \
+    --refine_model shuffle
+    
+exit
+# HCI max disparity = 4 * 8 = 32
+
+python3 train_best.py --imsize 135 --batch_size 10 \
+    --save_epochs 1000 \
+    --train_epochs 10000 \
+    --lr 0.001 \
+    --max_disparity 32 \
     --consistency_w 1 \
     --tv_loss_w 0.001 \
     --recon_loss l1 \
     --gpu_id 0 \
     --dataset hci \
-    --save_dir experiments \
-    --name 20211223_1130_merge_alpha \
+    --save_dir /results \
+    --name 20211226_1420_final \
     --use_crop \
     --merge_method alpha \
     --refine_model shuffle
-
+    
+exit
+# no LR
 python3 train_best.py --imsize 135 --batch_size 10 \
     --save_epochs 1000 \
     --train_epochs 10000 \
     --lr 0.001 \
-    --max_disparity 10 \
-    --consistency_w 1 \
+    --max_disparity 32 \
+    --consistency_w 0.0 \
     --tv_loss_w 0.001 \
     --recon_loss l1 \
     --gpu_id 1 \
     --dataset hci \
-    --save_dir experiments \
-    --name 20211223_1130_merge_left \
+    --save_dir /results \
+    --name 20211226_1420_nolr \
     --use_crop \
-    --merge_method left \
+    --merge_method alpha \
     --refine_model shuffle
     
+#
 python3 train_best.py --imsize 135 --batch_size 10 \
     --save_epochs 1000 \
     --train_epochs 10000 \
     --lr 0.001 \
-    --max_disparity 10 \
+    --max_disparity 32 \
     --consistency_w 1 \
     --tv_loss_w 0.001 \
     --recon_loss l1 \
     --gpu_id 2 \
     --dataset hci \
-    --save_dir experiments \
-    --name 20211223_1130_merge_right \
+    --save_dir /results \
+    --name 20211226_1420_3dcnn \
+    --use_crop \
+    --merge_method alpha \
+    --refine_model 3dcnn
+    
+
+python3 train_best.py --imsize 135 --batch_size 10 \
+    --save_epochs 1000 \
+    --train_epochs 10000 \
+    --lr 0.001 \
+    --max_disparity 32 \
+    --consistency_w 1 \
+    --tv_loss_w 0.001 \
+    --recon_loss l1 \
+    --gpu_id 2 \
+    --dataset hci \
+    --save_dir /results \
+    --name 20211226_1420_merge_alpha \
+    --use_crop \
+    --merge_method alpha \
+    --refine_model shuffle
+
+python3 train_best.py --imsize 135 --batch_size 10 \
+    --save_epochs 1000 \
+    --train_epochs 10000 \
+    --lr 0.001 \
+    --max_disparity 32 \
+    --consistency_w 1 \
+    --tv_loss_w 0.001 \
+    --recon_loss l1 \
+    --gpu_id 3 \
+    --dataset hci \
+    --save_dir /results \
+    --name 20211226_1420_merge_left \
+    --use_crop \
+    --merge_method left \
+    --refine_model shuffle
+    
+python3 train_best.py --imsize 135 --batch_size 10 \
+    --save_epochs 1000 \
+    --train_epochs 10000 \
+    --lr 0.001 \
+    --max_disparity 32 \
+    --consistency_w 1 \
+    --tv_loss_w 0.001 \
+    --recon_loss l1 \
+    --gpu_id 4 \
+    --dataset hci \
+    --save_dir /results \
+    --name 20211226_1420_merge_right \
     --use_crop \
     --merge_method right \
     --refine_model shuffle
@@ -53,120 +125,16 @@ python3 train_best.py --imsize 135 --batch_size 10 \
     --save_epochs 1000 \
     --train_epochs 10000 \
     --lr 0.001 \
-    --max_disparity 10 \
+    --max_disparity 32 \
     --consistency_w 1 \
     --tv_loss_w 0.001 \
     --recon_loss l1 \
-    --gpu_id 3 \
+    --gpu_id 5 \
     --dataset hci \
-    --save_dir experiments \
-    --name 20211223_1130_merge_avg \
+    --save_dir /results \
+    --name 20211226_1420_merge_avg \
     --use_crop \
     --merge_method avg \
     --refine_model shuffle
     
 exit
-# merge left
-python3.7 train_best.py --imsize 135 --batch_size 10 \
-    --save_epochs 500 \
-    --train_epochs 2000 \
-    --lr 0.001 \
-    --max_disparity 35 \
-    --edge_loss l2 \
-    --edge_loss_w 0 \
-    --consistency_w 1 \
-    --flow_consistency_w 0 \
-    --tv_loss_w 0.001 \
-    --rot_loss_w 0 \
-    --recon_loss l1 \
-    --gpu_id 3 \
-    --dataset hci \
-    --save_dir experiments \
-    --name ablation_merge_left \
-    --use_crop \
-    --merge_method left \
-    --refine_model shuffle
-
-# merge right
-python3.7 train_best.py --imsize 135 --batch_size 10 \
-    --save_epochs 500 \
-    --train_epochs 2000 \
-    --lr 0.001 \
-    --max_disparity 35 \
-    --edge_loss l2 \
-    --edge_loss_w 0 \
-    --consistency_w 1 \
-    --flow_consistency_w 0 \
-    --tv_loss_w 0.001 \
-    --rot_loss_w 0 \
-    --recon_loss l1 \
-    --gpu_id 1 \
-    --dataset hci \
-    --save_dir experiments \
-    --name ablation_merge_right \
-    --use_crop \
-    --merge_method right \
-    --refine_model shuffle
-
-# merge avg
-python3.7 train_best.py --imsize 135 --batch_size 10 \
-    --save_epochs 500 \
-    --train_epochs 2000 \
-    --lr 0.001 \
-    --max_disparity 35 \
-    --edge_loss l2 \
-    --edge_loss_w 0 \
-    --consistency_w 1 \
-    --flow_consistency_w 0 \
-    --tv_loss_w 0.001 \
-    --rot_loss_w 0 \
-    --recon_loss l1 \
-    --gpu_id 1 \
-    --dataset hci \
-    --save_dir experiments \
-    --name ablation_merge_avg \
-    --use_crop \
-    --merge_method avg \
-    --refine_model shuffle
-
-# no consistency
-python3.7 train_best.py --imsize 135 --batch_size 10 \
-    --save_epochs 500 \
-    --train_epochs 2000 \
-    --lr 0.001 \
-    --max_disparity 35 \
-    --edge_loss l2 \
-    --edge_loss_w 0 \
-    --consistency_w 0 \
-    --flow_consistency_w 0 \
-    --tv_loss_w 0.001 \
-    --rot_loss_w 0 \
-    --recon_loss l1 \
-    --gpu_id 1 \
-    --dataset hci \
-    --save_dir experiments \
-    --name ablation_no_consistency \
-    --use_crop \
-    --merge_method alpha \
-    --refine_model shuffle
-
-# no tv
-python3.7 train_best.py --imsize 135 --batch_size 10 \
-    --save_epochs 500 \
-    --train_epochs 2000 \
-    --lr 0.001 \
-    --max_disparity 35 \
-    --edge_loss l2 \
-    --edge_loss_w 0 \
-    --consistency_w 1 \
-    --flow_consistency_w 0 \
-    --tv_loss_w 0 \
-    --rot_loss_w 0 \
-    --recon_loss l1 \
-    --gpu_id 1 \
-    --dataset hci \
-    --save_dir experiments \
-    --name ablation_no_tv \
-    --use_crop \
-    --merge_method alpha \
-    --refine_model shuffle

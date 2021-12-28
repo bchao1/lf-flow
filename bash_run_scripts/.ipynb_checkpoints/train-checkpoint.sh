@@ -1,6 +1,81 @@
 #!/bin/bash
 cd ..
 
+python3 train_best.py --imsize 133 --batch_size 10 \
+    --save_epochs 1000 \
+    --train_epochs 10000 \
+    --lr 0.001 \
+    --max_disparity 10 \
+    --consistency_w 1 \
+    --tv_loss_w 0.001 \
+    --recon_loss l1 \
+    --gpu_id 0 \
+    --dataset inria_lytro \
+    --save_dir /results \
+    --name 20211228_2150_wide \
+    --use_crop \
+    --merge_method alpha \
+    --refine_model shuffle \
+    --mode stereo_wide
+
+python3 train_best.py --imsize 133 --batch_size 10 \
+    --save_epochs 1000 \
+    --train_epochs 10000 \
+    --lr 0.001 \
+    --max_disparity 10 \
+    --consistency_w 1 \
+    --tv_loss_w 0.001 \
+    --recon_loss l1 \
+    --gpu_id 1 \
+    --dataset inria_lytro \
+    --save_dir /results \
+    --name 20211228_2150_narrow \
+    --use_crop \
+    --merge_method alpha \
+    --refine_model shuffle \
+    --mode stereo_narrow
+
+python3 train_best.py --imsize 135 --batch_size 10 \
+    --save_epochs 1000 \
+    --train_epochs 10000 \
+    --lr 0.001 \
+    --max_disparity 32 \
+    --consistency_w 1 \
+    --tv_loss_w 0.001 \
+    --recon_loss l1 \
+    --gpu_id 2 \
+    --dataset hci \
+    --save_dir /results \
+    --name 20211228_2150_narrow \
+    --use_crop \
+    --merge_method alpha \
+    --refine_model shuffle \
+    --mode stereo_narrow
+
+python3 train_best.py --imsize 135 --batch_size 10 \
+    --save_epochs 1000 \
+    --train_epochs 10000 \
+    --lr 0.001 \
+    --max_disparity 40 \
+    --consistency_w 1 \
+    --tv_loss_w 0.001 \
+    --recon_loss l1 \
+    --gpu_id 3 \
+    --dataset inria_dlfd \
+    --save_dir /results \
+    --name 20211228_2150_narrow \
+    --use_crop \
+    --merge_method alpha \
+    --refine_model shuffle \
+    --mode stereo_narrow
+
+
+
+#-------
+
+
+
+
 # DLFD (4+1) * 8 =40
 python3 train_best.py --imsize 135 --batch_size 10 \
     --save_epochs 1000 \

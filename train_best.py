@@ -16,7 +16,7 @@ import torchvision.transforms as tv_transforms
 from argparse import ArgumentParser
 from tqdm import tqdm
 
-from lf_datasets import HCIDataset, INRIADataset, StanfordDataset
+from lf_datasets import HCIDataset, INRIADataset, INRIA_DLFD_Dataset
 from utils import warp_image_batch, generate_lf_batch
 from utils import plot_loss_logs
 from utils import denorm_tanh, normalize
@@ -75,8 +75,8 @@ def get_dataset_and_loader(args, train):
             use_crop = args.use_crop
         )
     elif args.dataset == 'inria_dlfd':
-        dataset = INRIADataset(
-            root = "/mount/data/inria_lytro/dataset.h5",
+        dataset = INRIA_DLFD_Dataset(
+            root = "/mount/data/inria_dlfd/dataset.h5",
             #root = "../tcsvt_datasets/inria_real/dataset.h5",
             train = train,
             im_size = args.imsize,

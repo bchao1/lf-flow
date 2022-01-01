@@ -2,11 +2,42 @@
 cd ..
 
 imsize="504"
-max_disparity="32"
-dataset="hci"
-save_dir="../2477845"
-name="20211224_1128_tv_0.1"
-mode="normal"
+max_disparity="40"
+dataset="inria_dlfd"
+save_dir="../results"
+test_mode="normal"
+mode="stereo_wide"
+
+for name in "20211228_2100_3dcnn"
+do
+echo $name
+    for e in 2000 4000 6000 8000 10000
+    do
+    echo $e
+    python3 test.py --imsize $imsize --batch_size 1 \
+        --max_disparity $max_disparity \
+        --dataset $dataset \
+        --save_dir $save_dir \
+        --name $name \
+        --use_epoch $e \
+        --disp_model original \
+        --gpu_id 0 \
+        --merge_method alpha \
+        --refine_model 3dcnn \
+        --test_mode $test_mode \
+        --mode $mode
+    done
+done
+
+exit
+
+imsize="371"
+max_disparity="4"
+dataset="inria_lytro"
+save_dir="../results"
+name="20211228_2150_narrow"
+test_mode="normal"
+mode="stereo_narrow"
 
 for e in 2000 4000 6000 8000 10000
 do
@@ -21,8 +52,11 @@ python3 test.py --imsize $imsize --batch_size 1 \
     --gpu_id 0 \
     --merge_method alpha \
     --refine_model shuffle \
-    --mode $mode 
+    --test_mode $test_mode \
+    --mode $mode
 done
+
+exit
 
 # hci and inria
 #python3.7 test.py --imsize $imsize --batch_size 1 \

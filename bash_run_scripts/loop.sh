@@ -8,22 +8,21 @@ save_dir="../results"
 test_mode="normal"
 mode="stereo_wide"
 
-for name in "20211228_2100_3dcnn"
+for name in "20211228_2100_merge_avg" 
 do
 echo $name
-    for e in 2000 4000 6000 8000 10000
+    while :
     do
-    echo $e
     python3 test.py --imsize $imsize --batch_size 1 \
         --max_disparity $max_disparity \
         --dataset $dataset \
         --save_dir $save_dir \
         --name $name \
-        --use_epoch $e \
+        --use_epoch 10000 \
         --disp_model original \
         --gpu_id 0 \
         --merge_method alpha \
-        --refine_model 3dcnn \
+        --refine_model shuffle \
         --test_mode $test_mode \
         --mode $mode
     done

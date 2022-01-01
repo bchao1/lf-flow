@@ -328,7 +328,8 @@ def test():
     parser.add_argument("--refine_hidden", type=int, default=128)
     parser.add_argument("--scale_baseline", type=float, default=1.0)
     parser.add_argument("--stereo_ratio", type=int, default=-1)
-    parser.add_argument("--mode", type=str, choices=["normal", "stereo", "flow", "data", "horizontal"], default="normal")
+    parser.add_argument("--test_mode", type=str, choices=["normal", "stereo", "flow", "data", "horizontal"], default="normal")
+    parser.add_argument("--mode", type=str, choices=["stereo_wide", "stereo_narrow"])
 
     args = parser.parse_args()
     args.use_crop = False
@@ -357,8 +358,8 @@ def test():
     refine_net_path = os.path.join(args.save_dir, "ckpt", "refine_{}.ckpt".format(args.use_epoch))
     disparity_net_path = os.path.join(args.save_dir, "ckpt", "disp_{}.ckpt".format(args.use_epoch))
 
-    refine_net.load_state_dict(torch.load(refine_net_path))
-    disparity_net.load_state_dict(torch.load(disparity_net_path))
+    refine_net.load_state_dict(torch.load(refine_net_path, map_location=f"cuda:{args.gpu_id}"))
+    disparity_net.load_state_dict(torch.load(disparity_net_path, map_location=f"cuda:{args.gpu_id}"))
 
     if torch.cuda.is_available() and args.gpu_id >= 0:
         torch.cuda.set_device(args.gpu_id)
@@ -371,19 +372,19 @@ def test():
     refine_net.eval()
     disparity_net.eval()
 
-    if args.mode == "normal":
+    if args.test_mode == "normal":
         run_inference(disparity_net, refine_net, dataloader, dataset, args)
-    elif args.mode == "flow":
+    elif args.test_mode == "flow":
         test_flow(disparity_net, dataset, args)
-    elif args.mode == "stereo": # HERE. Read in left-right stereo images
+    elif args.test_mode == "stereo": # HERE. Read in left-right stereo images
         i = 2
         left_path = "./temp/left_rect.png"#f"production/testing_data/hci_testing_data/left_{i}.png"
         right_path = "./temp/right_rect.png"#f"production/testing_data/hci_testing_data/right_{i}.png"
         single_stereo(disparity_net, refine_net, left_path, right_path, args, i)
         
-    elif args.mode == "data":
+    elif args.test_mode == "data":
         get_testing_data(dataloader)
-    elif args.mode == "horizontal":
+    elif args.test_mode == "horizontal":
         test_horizontal_views(dataloader, args)
 
 

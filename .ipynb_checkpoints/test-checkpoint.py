@@ -137,24 +137,23 @@ def get_testing_data(dataloader):
 
 def test_horizontal_views(dataloader, args):
     print(args.dataset)
-    root = "./data/zhang/"
+    root = f"./data/small_baseline_results/{args.dataset}"
     psnr_avg = AverageMeter()
     ssim_avg = AverageMeter()
     for i, (stereo_pair, target_lf, row_idx, left_idx, right_idx) in enumerate(dataloader):
         n = stereo_pair.shape[0]
-        middle_idx = args.lf_res * (args.lf_res // 2)
-        target_middle_row = target_lf[:, middle_idx + 1:middle_idx + args.lf_res, :, :, :]
-        target_middle_row = target_middle_row.cpu().numpy()[0]
-        target_middle_row = (target_middle_row + 1) * 00.5
+        target_lf = target_lf[0].reshape(args.lf_res, args.lf_res, *target_lf.shape[2:])
+        target_middle_row = target_lf[args.lf_res // 2]
+        target_middle_row = denorm_tanh(target_middle_row) # rescale to [0, 1]
+        target_middle_row = target_middle_row.cpu().numpy()
         # read in zhang views
         views = []
         for j in range(1, args.lf_res):
-            filename = "{}_{}_{}.jpeg".format(args.dataset, i, j)
+            filename = "{}_{}.jpeg".format(args.dataset, i, j)
             img = np.array(Image.open(os.path.join(root, filename)))
-            img = img * 1.0 / 255
+            img = img * 1.0 / 255 # rescale to [0, 1]
             views.append(img)
         views = np.stack(views)
-        #views = dataloader.dataset.transform(views).numpy()
 
         views = np.transpose(views, (0, 3, 1, 2))
         target_middle_row = np.transpose(target_middle_row, (0, 3, 1, 2))
@@ -313,12 +312,12 @@ def run_inference(disparity_net, refine_net, dataloader, dataset, args):
 def test():
 
     parser = ArgumentParser()
-    parser.add_argument("--dataset", type=str, choices=['hci', 'stanford', 'inria'])
+    parser.add_argument("--dataset", type=str, choices=['hci', 'inria_lytro', 'inria_dlfd'])
     parser.add_argument("--imsize", type=int)
     parser.add_argument("--batch_size", type=int, default=4)
     parser.add_argument("--save_dir", type=str, default="experiments")
     parser.add_argument("--name", type=str)
-    parser.add_argument("--use_epoch", type=int, default=1000)
+    parser.add_argument("--use_epoch", type=int, default=2000)
     parser.add_argument("--max_disparity", type=float, default=10)
     parser.add_argument("--fold", type=int, default=0)
     parser.add_argument("--concat", action="store_true")
@@ -329,7 +328,8 @@ def test():
     parser.add_argument("--refine_hidden", type=int, default=128)
     parser.add_argument("--scale_baseline", type=float, default=1.0)
     parser.add_argument("--stereo_ratio", type=int, default=-1)
-    parser.add_argument("--mode", type=str, choices=["normal", "stereo", "flow", "data", "horizontal"], default="normal")
+    parser.add_argument("--test_mode", type=str, choices=["normal", "stereo", "flow", "data", "horizontal"], default="normal")
+    parser.add_argument("--mode", type=str, choices=["stereo_wide", "stereo_narrow"])
 
     args = parser.parse_args()
     args.use_crop = False
@@ -358,8 +358,8 @@ def test():
     refine_net_path = os.path.join(args.save_dir, "ckpt", "refine_{}.ckpt".format(args.use_epoch))
     disparity_net_path = os.path.join(args.save_dir, "ckpt", "disp_{}.ckpt".format(args.use_epoch))
 
-    refine_net.load_state_dict(torch.load(refine_net_path))
-    disparity_net.load_state_dict(torch.load(disparity_net_path))
+    refine_net.load_state_dict(torch.load(refine_net_path, map_location=f"cuda:{args.gpu_id}"))
+    disparity_net.load_state_dict(torch.load(disparity_net_path, map_location=f"cuda:{args.gpu_id}"))
 
     if torch.cuda.is_available() and args.gpu_id >= 0:
         torch.cuda.set_device(args.gpu_id)
@@ -372,19 +372,19 @@ def test():
     refine_net.eval()
     disparity_net.eval()
 
-    if args.mode == "normal":
+    if args.test_mode == "normal":
         run_inference(disparity_net, refine_net, dataloader, dataset, args)
-    elif args.mode == "flow":
+    elif args.test_mode == "flow":
         test_flow(disparity_net, dataset, args)
-    elif args.mode == "stereo": # HERE. Read in left-right stereo images
+    elif args.test_mode == "stereo": # HERE. Read in left-right stereo images
         i = 2
         left_path = "./temp/left_rect.png"#f"production/testing_data/hci_testing_data/left_{i}.png"
         right_path = "./temp/right_rect.png"#f"production/testing_data/hci_testing_data/right_{i}.png"
         single_stereo(disparity_net, refine_net, left_path, right_path, args, i)
         
-    elif args.mode == "data":
+    elif args.test_mode == "data":
         get_testing_data(dataloader)
-    elif args.mode == "horizontal":
+    elif args.test_mode == "horizontal":
         test_horizontal_views(dataloader, args)
 
 

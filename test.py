@@ -136,8 +136,10 @@ def get_testing_data(dataloader):
         Image.fromarray(right).save("./temp/right_{}.png".format(i))
 
 def test_horizontal_views(dataloader, args):
-    print(args.dataset)
-    root = f"./data/small_baseline_results/{args.dataset}"
+    print(len(dataloader.dataset))
+    args.lf_res = dataloader.dataset.lf_res
+    
+    root = f"./temp/large_baseline_results/{args.dataset}"
     psnr_avg = AverageMeter()
     ssim_avg = AverageMeter()
     for i, (stereo_pair, target_lf, row_idx, left_idx, right_idx) in enumerate(dataloader):
@@ -146,10 +148,15 @@ def test_horizontal_views(dataloader, args):
         target_middle_row = target_lf[args.lf_res // 2]
         target_middle_row = denorm_tanh(target_middle_row) # rescale to [0, 1]
         target_middle_row = target_middle_row.cpu().numpy()
+        
+        imgs = (target_middle_row * 255).astype(np.uint8)
+        imgs = [Image.fromarray(img) for img in imgs]
+        imgs[0].save(f"./temp/lf_{i}.gif", save_all=True, append_images=imgs[1:], loop=0, duration=100)
+
         # read in zhang views
         views = []
-        for j in range(1, args.lf_res):
-            filename = "{}_{}.jpeg".format(args.dataset, i, j)
+        for j in range(1, args.lf_res+1):
+            filename = "{}_{}.jpeg".format(i, j+3)
             img = np.array(Image.open(os.path.join(root, filename)))
             img = img * 1.0 / 255 # rescale to [0, 1]
             views.append(img)
@@ -262,6 +269,8 @@ def run_inference(disparity_net, refine_net, dataloader, dataset, args):
         
         syn_lf = [Image.fromarray((np.transpose(view, (1, 2, 0)) * 255).astype(np.uint8)) for view in syn_lf[0]]
         syn_lf[0].save(os.path.join(args.output_dir, f"lf_{i}.gif"), save_all=True, append_images=syn_lf[1:], duration=100, loop=0)
+        Image.save(syn_lf[0], os.path.join(args.output_dir, f"lf_{i}_top_left.png"))
+        Image.save(syn_lf[-1], os.path.join(args.output_dir, f"lf_{i}_bottom_right.png"))
         save_disparity(unit_disp1, os.path.join(args.output_dir, f"lf_{i}_disp1.png"))
         save_disparity(unit_disp2, os.path.join(args.output_dir, f"lf_{i}_disp2.png"))
         tv_save_image(denorm_tanh(left), os.path.join(args.output_dir, f"lf_{i}_left.png"), padding=0)
@@ -337,7 +346,7 @@ def test():
     
     if args.dataset == 'stanford':
         args.name = args.name + "_fold{}".format(args.fold)
-    if None in list(args_dict.values()):
+    if args.mode == "normal" and None in list(args_dict.values()):
         not_specified = [key for key in args_dict if args_dict[key] is None]
         raise ValueError("Please specify: {}".format(", ".join(not_specified)))
     if args.stereo_ratio > 0:
@@ -349,27 +358,28 @@ def test():
     # Prepare datasets
     dataset, dataloader = get_dataset_and_loader(args, train=False)
 
-    args.num_views = dataset.lf_res**2
-    args.lf_res = dataset.lf_res
-    disparity_net, refine_net = get_model(args)
+    if args.mode == "normal":
+        args.num_views = dataset.lf_res**2
+        args.lf_res = dataset.lf_res
+        disparity_net, refine_net = get_model(args)
 
 
-    refine_net_path = os.path.join(args.save_dir, "ckpt", "refine_{}.ckpt".format(args.use_epoch))
-    disparity_net_path = os.path.join(args.save_dir, "ckpt", "disp_{}.ckpt".format(args.use_epoch))
+        refine_net_path = os.path.join(args.save_dir, "ckpt", "refine_{}.ckpt".format(args.use_epoch))
+        disparity_net_path = os.path.join(args.save_dir, "ckpt", "disp_{}.ckpt".format(args.use_epoch))
 
-    refine_net.load_state_dict(torch.load(refine_net_path))
-    disparity_net.load_state_dict(torch.load(disparity_net_path))
+        refine_net.load_state_dict(torch.load(refine_net_path, map_location=f"cuda:{args.gpu_id}"))
+        disparity_net.load_state_dict(torch.load(disparity_net_path, map_location=f"cuda:{args.gpu_id}"))
 
-    if torch.cuda.is_available() and args.gpu_id >= 0:
-        torch.cuda.set_device(args.gpu_id)
+        if torch.cuda.is_available() and args.gpu_id >= 0:
+            torch.cuda.set_device(args.gpu_id)
 
-    if torch.cuda.is_available() and args.gpu_id >= 0:
-        print("Running using GPU")
-        refine_net = refine_net.cuda()
-        disparity_net = disparity_net.cuda()
-    
-    refine_net.eval()
-    disparity_net.eval()
+        if torch.cuda.is_available() and args.gpu_id >= 0:
+            print("Running using GPU")
+            refine_net = refine_net.cuda()
+            disparity_net = disparity_net.cuda()
+        
+        refine_net.eval()
+        disparity_net.eval()
 
     if args.mode == "normal":
         run_inference(disparity_net, refine_net, dataloader, dataset, args)

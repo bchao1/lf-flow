@@ -4,11 +4,12 @@ cd ..
 imsize="504"
 max_disparity="32"
 dataset="hci"
-save_dir="../2477845"
-name="20211224_1128_tv_1"
+save_dir="experiments"
 mode="normal"
 
-for e in 2000 4000 6000 8000 10000
+for name in "20211226_1420_final"
+do
+for e in 10000
 do
 echo $e
 python3 test.py --imsize $imsize --batch_size 1 \
@@ -23,6 +24,8 @@ python3 test.py --imsize $imsize --batch_size 1 \
     --refine_model shuffle \
     --mode $mode 
 done
+done
+
 
 # hci and inria
 #python3.7 test.py --imsize $imsize --batch_size 1 \

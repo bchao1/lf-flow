@@ -161,8 +161,12 @@ def test_hci_dataset(root):
     # Access h5 file
     start = time.time()
     file = h5py.File(os.path.join(root, 'dataset.h5'), 'r')
-    data = file['train']['boxes'][()]
+    data = file['test']['bicycle'][()]
     print("Access h5 file time : {}".format(time.time() - start))
+    data = data[::3, ::3].reshape(-1, *data.shape[2:])
+    for i, img in enumerate(data):
+        Image.fromarray(img).save(f"../data/interview/{i}.png")
+    
 
 def test_stanford_dataset(root):
     # Access h5 file
@@ -188,7 +192,9 @@ def test_inria_dlfd_dataset(root):
     print("Lf size: {}".format(data.shape))
     print("Access h5 file time : {}".format(time.time() - start))
 
-def save_stereo(save_root, dataset_name):
+def save_stereo(save_root, dataset_name, mode="small"):
+    assert mode in ["small", "large"] # stereo mode
+
     with open('config.yaml') as f:
         config = yaml.load(f, Loader=yaml.FullLoader)
     os.makedirs(os.path.join(save_root, dataset_name), exist_ok=True)
@@ -202,8 +208,12 @@ def save_stereo(save_root, dataset_name):
     for i, lf_name in enumerate(list(test_data.keys())):
         data = test_data[lf_name][()]
         lf_res = data.shape[0]
-        left = data[lf_res // 2, lf_res // 2]
-        right = data[lf_res // 2, lf_res // 2 + 1]
+        if mode == "small":
+            left = data[lf_res // 2, lf_res // 2 - 1]
+            right = data[lf_res // 2, lf_res // 2 + 1]
+        elif mode == "large":
+            left = data[lf_res // 2, 0]
+            right = data[lf_res // 2, lf_res - 1]
         Image.fromarray(left).save(os.path.join(save_root, dataset_name, f"{i}_left.png"))
         Image.fromarray(right).save(os.path.join(save_root, dataset_name, f"{i}_right.png"))
 
@@ -212,7 +222,11 @@ def save_stereo(save_root, dataset_name):
 
 if __name__ == '__main__':
     #preprocess_lf_dataset('hci')
-    #test_dataset_h5('inria_dlfd')
-    save_stereo("../data/zhang_data", "inria_dlfd")
-    save_stereo("../data/zhang_data", "inria_lytro")
-    save_stereo("../data/zhang_data", "hci")
+    test_dataset_h5('hci')
+    exit()
+    save_stereo("../data/zhang_small_baseline_data", "inria_dlfd", "small")
+    save_stereo("../data/zhang_small_baseline_data", "inria_lytro", "small")
+    save_stereo("../data/zhang_small_baseline_data", "hci", "small")
+    save_stereo("../data/zhang_large_baseline_data", "inria_dlfd", "large")
+    save_stereo("../data/zhang_large_baseline_data", "inria_lytro", "large")
+    save_stereo("../data/zhang_large_baseline_data", "hci", "large")

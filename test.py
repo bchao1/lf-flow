@@ -138,39 +138,46 @@ def get_testing_data(dataloader):
 def test_horizontal_views(dataloader, args):
     print(len(dataloader.dataset))
     args.lf_res = dataloader.dataset.lf_res
+    print(args.lf_res)
     
-    root = f"./temp/large_baseline_results/{args.dataset}"
+    root = f"./temp/small_baseline_results/{args.dataset}"
     psnr_avg = AverageMeter()
     ssim_avg = AverageMeter()
     for i, (stereo_pair, target_lf, row_idx, left_idx, right_idx) in enumerate(dataloader):
-        n = stereo_pair.shape[0]
-        target_lf = target_lf[0].reshape(args.lf_res, args.lf_res, *target_lf.shape[2:])
-        target_middle_row = target_lf[args.lf_res // 2]
-        target_middle_row = denorm_tanh(target_middle_row) # rescale to [0, 1]
-        target_middle_row = target_middle_row.cpu().numpy()
-        
-        imgs = (target_middle_row * 255).astype(np.uint8)
-        imgs = [Image.fromarray(img) for img in imgs]
-        imgs[0].save(f"./temp/lf_{i}.gif", save_all=True, append_images=imgs[1:], loop=0, duration=100)
+        try:
+            n = stereo_pair.shape[0]
+            target_lf = target_lf[0].reshape(args.lf_res, args.lf_res, *target_lf.shape[2:])
+            target_middle_row = target_lf[args.lf_res // 2]
+            target_middle_row = denorm_tanh(target_middle_row) # rescale to [0, 1]
+            target_middle_row = target_middle_row.cpu().numpy()
+            
+            imgs = (target_middle_row * 255).astype(np.uint8)
+            imgs = [Image.fromarray(img) for img in imgs]
+            imgs[0].save(f"./temp/lf_{i}.gif", save_all=True, append_images=imgs[1:], loop=0, duration=100)
 
-        # read in zhang views
-        views = []
-        for j in range(1, args.lf_res+1):
-            filename = "{}_{}.jpeg".format(i, j+3)
-            img = np.array(Image.open(os.path.join(root, filename)))
-            img = img * 1.0 / 255 # rescale to [0, 1]
-            views.append(img)
-        views = np.stack(views)
+            # read in zhang views
+            views = []
+            for j in range(1, args.lf_res+1):
+                filename = "{}_{}.jpeg".format(i, j)
+                img = np.array(Image.open(os.path.join(root, filename)))
+                img = img * 1.0 / 255 # rescale to [0, 1]
+                views.append(img)
+            views = np.stack(views)
 
-        views = np.transpose(views, (0, 3, 1, 2))
-        target_middle_row = np.transpose(target_middle_row, (0, 3, 1, 2))
-        psnr = metrics.psnr(views, target_middle_row)
-        ssim = metrics.ssim(views, target_middle_row)
-        if psnr == psnr and ssim == ssim: # check for nan
-            psnr_avg.update(psnr, n)
-            ssim_avg.update(ssim, n)
-        
-            print("PSNR: ", psnr, " | SSIM: ", ssim)
+            views = np.transpose(views, (0, 3, 1, 2))
+            print(views.shape)
+            views = views[:, :, 4:-4, 4:-4]
+            target_middle_row = np.transpose(target_middle_row, (0, 3, 1, 2))
+            print(target_middle_row.shape)
+            psnr = metrics.psnr(views, target_middle_row)
+            ssim = metrics.ssim(views, target_middle_row)
+            if psnr == psnr and ssim == ssim: # check for nan
+                psnr_avg.update(psnr, n)
+                ssim_avg.update(ssim, n)
+            
+                print("PSNR: ", psnr, " | SSIM: ", ssim)
+        except:
+            pass
     print("Average PSNR: ", psnr_avg.avg)
     print("Average SSIM: ", ssim_avg.avg)
         
@@ -269,8 +276,8 @@ def run_inference(disparity_net, refine_net, dataloader, dataset, args):
         
         syn_lf = [Image.fromarray((np.transpose(view, (1, 2, 0)) * 255).astype(np.uint8)) for view in syn_lf[0]]
         syn_lf[0].save(os.path.join(args.output_dir, f"lf_{i}.gif"), save_all=True, append_images=syn_lf[1:], duration=100, loop=0)
-        Image.save(syn_lf[0], os.path.join(args.output_dir, f"lf_{i}_top_left.png"))
-        Image.save(syn_lf[-1], os.path.join(args.output_dir, f"lf_{i}_bottom_right.png"))
+        syn_lf[0].save(os.path.join(args.output_dir, f"lf_{i}_top_left.png"))
+        syn_lf[-1].save(os.path.join(args.output_dir, f"lf_{i}_bottom_right.png"))
         save_disparity(unit_disp1, os.path.join(args.output_dir, f"lf_{i}_disp1.png"))
         save_disparity(unit_disp2, os.path.join(args.output_dir, f"lf_{i}_disp2.png"))
         tv_save_image(denorm_tanh(left), os.path.join(args.output_dir, f"lf_{i}_left.png"), padding=0)
@@ -337,7 +344,8 @@ def test():
     parser.add_argument("--refine_hidden", type=int, default=128)
     parser.add_argument("--scale_baseline", type=float, default=1.0)
     parser.add_argument("--stereo_ratio", type=int, default=-1)
-    parser.add_argument("--mode", type=str, choices=["normal", "stereo", "flow", "data", "horizontal"], default="normal")
+    parser.add_argument("--test_mode", type=str, choices=["normal", "stereo", "flow", "data", "horizontal"], default="normal")
+    parser.add_argument("--mode", type=str, choices=["stereo_wide", "stereo_narrow"])
 
     args = parser.parse_args()
     args.use_crop = False
@@ -346,19 +354,19 @@ def test():
     
     if args.dataset == 'stanford':
         args.name = args.name + "_fold{}".format(args.fold)
-    if args.mode == "normal" and None in list(args_dict.values()):
+    if args.test_mode == "normal" and None in list(args_dict.values()):
         not_specified = [key for key in args_dict if args_dict[key] is None]
         raise ValueError("Please specify: {}".format(", ".join(not_specified)))
     if args.stereo_ratio > 0:
         assert(args.stereo_ratio % 2 == 0)
     args.save_dir = os.path.join(args.save_dir, args.dataset, args.name)
-    args.output_dir = os.path.join("./temp/mymodel", args.dataset, args.name, str(args.use_epoch)) # save results to here
+    args.output_dir = os.path.join("./tcsvt_results/mine", args.dataset, args.name, str(args.use_epoch)) # save results to here
     os.makedirs(args.output_dir, exist_ok=True)
 
     # Prepare datasets
     dataset, dataloader = get_dataset_and_loader(args, train=False)
 
-    if args.mode == "normal":
+    if args.test_mode == "normal":
         args.num_views = dataset.lf_res**2
         args.lf_res = dataset.lf_res
         disparity_net, refine_net = get_model(args)
@@ -381,19 +389,19 @@ def test():
         refine_net.eval()
         disparity_net.eval()
 
-    if args.mode == "normal":
+    if args.test_mode == "normal":
         run_inference(disparity_net, refine_net, dataloader, dataset, args)
-    elif args.mode == "flow":
+    elif args.test_mode == "flow":
         test_flow(disparity_net, dataset, args)
-    elif args.mode == "stereo": # HERE. Read in left-right stereo images
+    elif args.test_mode == "stereo": # HERE. Read in left-right stereo images
         i = 2
         left_path = "./temp/left_rect.png"#f"production/testing_data/hci_testing_data/left_{i}.png"
         right_path = "./temp/right_rect.png"#f"production/testing_data/hci_testing_data/right_{i}.png"
         single_stereo(disparity_net, refine_net, left_path, right_path, args, i)
         
-    elif args.mode == "data":
+    elif args.test_mode == "data":
         get_testing_data(dataloader)
-    elif args.mode == "horizontal":
+    elif args.test_mode == "horizontal":
         test_horizontal_views(dataloader, args)
 
 

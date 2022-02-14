@@ -10,8 +10,8 @@ from PIL import Image
 class LFDataset:
     """ All light field dataset inherits this base dataset """ 
 
-    def __init__(self, root, train, im_size, transform, use_crop=False, mode="stereo"):
-        assert mode in ["stereo", "single", "4crop", "2crop"]
+    def __init__(self, root, train, im_size, transform, use_crop=False, mode="stereo_wide"):
+        assert mode in ["stereo_wide", "stereo_narrow", "single", "4crop", "2crop_wide", "2crop_narrow"]
         self.mode = mode
         self.root = root
         self.train = train
@@ -53,18 +53,17 @@ class LFDataset:
             lf = self.transform(lf)
         lf = lf.reshape(self._lf_size, self._lf_size, *lf.shape[1:]) # (N, N, H, W, 3)
 
-        if self.mode == "stereo":
-            if self.train:
-                # Sample stereo views when training
-                #stereo_row_idx, stereo_left_idx, stereo_right_idx = sample_stereo_index(self._lf_size)
-                
+        if "stereo" in self.mode:
+            if self.mode == "stereo_wide":
+                # Wide baseline stereo
                 stereo_row_idx = self.lf_res // 2 # middle row
                 stereo_left_idx = 0 # wide left view
                 stereo_right_idx = self.lf_res - 1 # wide right view
-            else:
+            elif self.mode == "stereo_narrow":
+                # Narrow baseline stereo
                 stereo_row_idx = self.lf_res // 2 # middle row
-                stereo_left_idx = 0 # wide left view
-                stereo_right_idx = self.lf_res - 1 # wide right view
+                stereo_left_idx = self.lf_res // 2 - 1 # narrow left view
+                stereo_right_idx = self.lf_res // 2 + 1 # narrow right view
             
             stereo_left_image = lf[stereo_row_idx, stereo_left_idx]
             stereo_right_image = lf[stereo_row_idx, stereo_right_idx]
@@ -89,9 +88,13 @@ class LFDataset:
                 return corner_views, target_view, target_i, target_j
             else:
                 return corner_views, lf
-        elif self.mode == "2crop":
-            corner_i = [self.lf_res // 2, self.lf_res // 2]
-            corner_j = [0, self.lf_res - 1]
+        elif "2crop" in self.mode:
+            if self.mode == "2crop_wide":
+                corner_i = [self.lf_res // 2, self.lf_res // 2]
+                corner_j = [0, self.lf_res - 1]
+            elif self.mode == "2crop_narrow":
+                corner_i = [self.lf_res // 2, self.lf_res // 2]
+                corner_j = [self.lf_res // 2 - 1, self.lf_res // 2 + 1]
             corner_views = lf[corner_i, corner_j] # (2, h, w, 3)
             if self.train:
                 target_i = np.random.randint(self.lf_res)
@@ -195,7 +198,7 @@ class INRIA_DLFD_Dataset(LFDataset):
 
 def test_dataset(dataset, train):
     if dataset == 'hci':
-        dataset = HCIDataset(root="../../../mnt/data2/bchao/lf/hci/full_data/dataset.h5", train=train)
+        dataset = HCIDataset(root="/mnt/data2/bchao/lf/tcsvt_datasets/hci/dataset.h5", mode="single", train=train)
     elif dataset == 'stanford':
         dataset = StanfordDataset(root="../../../mnt/data2/bchao/lf/stanford/dataset.h5", im_size=128)
     elif dataset == 'inria':
@@ -205,11 +208,15 @@ def test_dataset(dataset, train):
     #    lf = dataset.get_single_lf(i)
     #    view = lf[0, 0]
     #    Image.fromarray(view).save("./imgs/{}.png".format(i))
-    lf = dataset.get_single_lf(15)
+    print(dataset.lf_names)
+    lf = dataset.get_single_lf(3)
+    print(lf.shape)
+    lf = lf[::3, ::3]
+    print(lf.shape)
     lf = lf.reshape(lf.shape[0] * lf.shape[1], *lf.shape[2:])
     for i, view in enumerate(lf):
         Image.fromarray(view).save("./imgs/{}.png".format(i))
 
 if __name__ == "__main__":
-    test_dataset("inria", False)
+    test_dataset("hci", False)
     

@@ -72,27 +72,29 @@ def get_dataset_and_loader(args, train):
             im_size = args.imsize,
             transform = transform,
             use_all = False,
-            use_crop = args.use_crop
+            use_crop = args.use_crop,
+            mode = args.mode
         )
     elif args.dataset == 'inria_dlfd':
         dataset = INRIA_DLFD_Dataset(
-            #root = "/mount/data/inria_lytro/dataset.h5",
             root = "/mnt/data2/bchao/lf/tcsvt_datasets/inria_dlfd/dataset.h5",
             train = train,
             im_size = args.imsize,
             transform = transform,
             use_all = False,
-            use_crop = args.use_crop
+            use_crop = args.use_crop,
+            mode = args.mode
         )
     elif args.dataset == 'inria_lytro':
         dataset = INRIADataset(
-            root = "/mount/data/inria_lytro/dataset.h5",
-            #root = "../tcsvt_datasets/inria_real/dataset.h5",
+            #root = "/mount/data/inria_lytro/dataset.h5",
+            root = "/mnt/data2/bchao/lf/tcsvt_datasets/inria_lytro/dataset.h5",
             train = train,
             im_size = args.imsize,
             transform = transform,
             use_all = False,
-            use_crop = args.use_crop
+            use_crop = args.use_crop,
+            mode = args.mode
         )
     else:
         raise ValueError("dataset [{}] not supported".format(args.dataset))
@@ -197,6 +199,7 @@ def main():
     parser.add_argument("--fold", default=-1, type=int, choices=list(range(5)), help="Kth-fold for Stanford Dataset")
     parser.add_argument("--save_dir", type=str, default="experiments")
     parser.add_argument("--name", type=str)
+    parser.add_argument("--mode", type=str, choices=["stereo_wide", "stereo_narrow"])
 
     args = parser.parse_args()
     exp_name = get_exp_name(args)

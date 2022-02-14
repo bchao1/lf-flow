@@ -2,24 +2,23 @@
 cd ..
 
 imsize="504"
-max_disparity="32"
-dataset="hci"
-save_dir="experiments"
+max_disparity="40"
+dataset="inria_dlfd"
+save_dir="../results"
 test_mode="normal"
 mode="stereo_wide"
 
-for name in "20211226_1420_final"
+for name in "20211228_2100_merge_avg" 
 do
 echo $name
-    for e in 10000
+    while :
     do
-    echo $e
     python3 test.py --imsize $imsize --batch_size 1 \
         --max_disparity $max_disparity \
         --dataset $dataset \
         --save_dir $save_dir \
         --name $name \
-        --use_epoch $e \
+        --use_epoch 10000 \
         --disp_model original \
         --gpu_id 0 \
         --merge_method alpha \
@@ -38,11 +37,8 @@ save_dir="../results"
 name="20211228_2150_narrow"
 test_mode="normal"
 mode="stereo_narrow"
->>>>>>> 2c7ccdef63086bc1fd5a2341aca5aa051f2c5209
 
-for name in "20211226_1420_final"
-do
-for e in 10000
+for e in 2000 4000 6000 8000 10000
 do
 echo $e
 python3 test.py --imsize $imsize --batch_size 1 \
@@ -58,8 +54,6 @@ python3 test.py --imsize $imsize --batch_size 1 \
     --test_mode $test_mode \
     --mode $mode
 done
-done
-
 
 exit
 

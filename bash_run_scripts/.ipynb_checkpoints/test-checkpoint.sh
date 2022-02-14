@@ -5,7 +5,40 @@ imsize="504"
 max_disparity="32"
 dataset="hci"
 save_dir="experiments"
-mode="normal"
+test_mode="normal"
+mode="stereo_wide"
+
+for name in "20211226_1420_final"
+do
+echo $name
+    for e in 10000
+    do
+    echo $e
+    python3 test.py --imsize $imsize --batch_size 1 \
+        --max_disparity $max_disparity \
+        --dataset $dataset \
+        --save_dir $save_dir \
+        --name $name \
+        --use_epoch $e \
+        --disp_model original \
+        --gpu_id 0 \
+        --merge_method alpha \
+        --refine_model shuffle \
+        --test_mode $test_mode \
+        --mode $mode
+    done
+done
+
+exit
+
+imsize="371"
+max_disparity="4"
+dataset="inria_lytro"
+save_dir="../results"
+name="20211228_2150_narrow"
+test_mode="normal"
+mode="stereo_narrow"
+>>>>>>> 2c7ccdef63086bc1fd5a2341aca5aa051f2c5209
 
 for name in "20211226_1420_final"
 do
@@ -22,10 +55,13 @@ python3 test.py --imsize $imsize --batch_size 1 \
     --gpu_id 0 \
     --merge_method alpha \
     --refine_model shuffle \
-    --mode $mode 
+    --test_mode $test_mode \
+    --mode $mode
 done
 done
 
+
+exit
 
 # hci and inria
 #python3.7 test.py --imsize $imsize --batch_size 1 \

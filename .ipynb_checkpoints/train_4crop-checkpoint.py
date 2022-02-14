@@ -38,7 +38,7 @@ def get_dataset_and_loader(args, train):
 
     if args.dataset == 'hci':
         dataset = HCIDataset(
-            root = "../tcsvt_datasets/hci/dataset.h5",
+            root = "/mnt/data2/bchao/lf/tcsvt_datasets/hci/dataset.h5",
             train = train,
             im_size = args.imsize,
             transform = transform,
@@ -46,9 +46,9 @@ def get_dataset_and_loader(args, train):
             use_crop = args.use_crop,
             mode = args.mode
         )
-    elif args.dataset == 'inria':
+    elif args.dataset == 'inria_lytro':
         dataset = INRIADataset(
-            root = "../tcsvt_datasets/inria_lytro/dataset.h5",
+            root = "/mount/data/inria_lytro/dataset.h5",
             train = train,
             im_size = args.imsize,
             transform = transform,
@@ -58,7 +58,7 @@ def get_dataset_and_loader(args, train):
         )
     elif args.dataset == "inria_dlfd":
         dataset = INRIA_DLFD_Dataset(
-            root = "../tcsvt_datasets/inria_dlfd/dataset.h5",
+            root = "/mount/data/inria_dlfd/dataset.h5",
             train = train,
             im_size = args.imsize,
             transform = transform,
@@ -81,8 +81,10 @@ def get_input_features(corner_views, target_i, target_j, lf_res, disparity_level
     b, _, _, h, w = corner_views.shape
     if mode == "4crop":
         corner_indices = [(0, 0), (0, lf_res - 1), (lf_res - 1, 0), (lf_res - 1, lf_res - 1)]
-    elif mode == "2crop":
+    elif mode == "2crop_wide":
         corner_indices = [(lf_res // 2, 0), (lf_res // 2, lf_res - 1)]
+    elif mode == "2crop_narrow":
+        corner_indices = [(lf_res // 2, lf_res // 2 - 1), (lf_res // 2, lf_res // 2 + 1)]
 
     means = []
     stds = []
@@ -111,8 +113,11 @@ def warp_to_view(corner_views, target_i, target_j, disp, lf_res, mode):
     b, _, _, h, w = corner_views.shape
     if mode == "4crop":
         corner_indices = [(0, 0), (0, lf_res - 1), (lf_res - 1, 0), (lf_res - 1, lf_res - 1)]
-    elif mode == "2crop":
+    elif mode == "2crop_wide":
         corner_indices = [(lf_res // 2, 0), (lf_res // 2, lf_res - 1)]
+    elif mode == "2crop_narrow":
+        corner_indices = [(lf_res // 2, lf_res // 2 - 1), (lf_res // 2, lf_res // 2 + 1)]
+        
     warped = []
     for idx, (i, j) in enumerate(corner_indices):
         shift_i = target_i - i
@@ -145,7 +150,7 @@ def main():
     parser.add_argument("--disparity_levels", type=int, default=100) # specified in paper
     parser.add_argument("--scale_disparity", type=float, default=4)
     parser.add_argument("--use_crop", action="store_true")
-    parser.add_argument("--mode", type=str, choices=["2crop", "4crop"])
+    parser.add_argument("--mode", type=str, choices=["2crop_wide", "2crop_narrow", "4crop"])
 
     # Losses and regularizations
 
@@ -155,7 +160,7 @@ def main():
     parser.add_argument("--c_loss_w", type=float)
     
     parser.add_argument("--gpu_id", type=int, default=0)
-    parser.add_argument("--dataset", type=str, choices=['hci', 'inria_dlfd', 'inria'], default='hci')
+    parser.add_argument("--dataset", type=str, choices=['hci', 'inria_dlfd', 'inria_lytro'], default='hci')
     parser.add_argument("--fold", type=int, choices=list(range(5)), help="Kth-fold for Stanford Dataset")
     parser.add_argument("--save_dir", type=str, default="experiments")
     parser.add_argument("--name", type=str)
@@ -189,7 +194,7 @@ def main():
 
     if args.mode == "4crop":
         refine_net = Network(in_channels=3*4+3, out_channels=3) # 3N+3
-    elif args.mode == "2crop":
+    elif "2crop" in args.mode:
         refine_net = Network(in_channels=3*2+3, out_channels=3) # 3N+3
     depth_net = Network(in_channels=args.disparity_levels*2, out_channels=1) # 2*L
 

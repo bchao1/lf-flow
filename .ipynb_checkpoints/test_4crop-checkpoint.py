@@ -25,19 +25,19 @@ def main():
     parser.add_argument("--scale_disparity", type=float, default=4)
     
     parser.add_argument("--gpu_id", type=int, choices=[0, 1], default=0)
-    parser.add_argument("--dataset", type=str, choices=['hci', 'inria_dlfd', 'inria'], default='hci')
+    parser.add_argument("--dataset", type=str, choices=['hci', 'inria_dlfd', 'inria_lytro'], default='hci')
     parser.add_argument("--fold", type=int, choices=list(range(5)), help="Kth-fold for Stanford Dataset")
     parser.add_argument("--save_dir", type=str, default="experiments")
     parser.add_argument("--name", type=str)
     parser.add_argument("--use_epoch", type=int, default=1000)
-    parser.add_argument("--mode", type=str, choices=["2crop", "4crop"])
+    parser.add_argument("--mode", type=str, choices=["2crop_narrow", "2crop_wide", "4crop"])
 
     args = parser.parse_args()
     if args.dataset == 'stanford':
         args.name = args.name + "_fold{}".format(args.fold)
     os.makedirs(os.path.join(args.save_dir, args.dataset, args.name), exist_ok=True)
     args.save_dir = os.path.join(args.save_dir, args.dataset, args.name)
-    args.output_dir = os.path.join("temp", args.mode, args.dataset, args.name, str(args.use_epoch))
+    args.output_dir = os.path.join("./tcsvt_results", args.mode, args.dataset, args.name, str(args.use_epoch))
     
     os.makedirs(args.output_dir, exist_ok=True)
     args.use_crop = False
@@ -48,18 +48,19 @@ def main():
 
     if args.mode == "4crop":
         refine_net = Network(in_channels=3*4+3, out_channels=3) # 3N+3
-    elif args.mode == "2crop":
+    elif "2crop" in args.mode:
         refine_net = Network(in_channels=3*2+3, out_channels=3) # 3N+3
     depth_net = Network(in_channels=args.disparity_levels*2, out_channels=1)
 
     refine_net_path = os.path.join(args.save_dir, "ckpt", "refine_{}.ckpt".format(args.use_epoch))
     depth_net_path = os.path.join(args.save_dir, "ckpt", "depth_{}.ckpt".format(args.use_epoch))
 
-    refine_net.load_state_dict(torch.load(refine_net_path, map_location="cpu"))
-    depth_net.load_state_dict(torch.load(depth_net_path, map_location="cpu"))
+    refine_net.load_state_dict(torch.load(refine_net_path, map_location=f"cuda:{args.gpu_id}"))
+    depth_net.load_state_dict(torch.load(depth_net_path, map_location=f"cuda:{args.gpu_id}"))
 
 
     if torch.cuda.is_available():
+        print("Use cuda")
         torch.cuda.set_device(args.gpu_id)
 #
     if torch.cuda.is_available():
@@ -90,7 +91,7 @@ def main():
         for u in range(dataset.lf_res):
             for v in range(dataset.lf_res):
                 # warping here!
-                #print(u, v)
+                print(u, v)
                 target_pos_i = torch.tensor(u).float().reshape(1, 1)
                 target_pos_j = torch.tensor(v).float().reshape(1, 1)
                 if torch.cuda.is_available():
@@ -140,6 +141,8 @@ def main():
         
         syn_views = [Image.fromarray((view*255).astype(np.uint8)) for view in syn_views]
         syn_views[0].save(f"{args.output_dir}/lf{i}.gif", save_all=True, append_images=syn_views[1:], duration=100, loop=0)
+        syn_views[0].save(f"{args.output_dir}/lf{i}_top_left.png")
+        syn_views[-1].save(f"{args.output_dir}/lf{i}_bottom_right.png")
 
     avg_time = total_time / len(dataset)
     print("Average PSNR: ", psnr_avg.avg)

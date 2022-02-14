@@ -2,11 +2,15 @@
 
 ## 2022/2/4 update
 
+[Paper link](https://bchao1.github.io/papers/tvcg2022.pdf).
+
+
 ### Datasets and trained weights
 Light field datasets are in `/mnt/data2/bchao/lf/tcsvt_datasets/`:
 - `hci/dataset.h5`
 - `inria_dlfd/dataset.h5`
 - `inria_lytro/dataset.h5`
+
 Define the dataset path in function `get_dataset_and_loader()` in `train_best.py`. The dataset class definition is in `lf_datasets.py`.
    
 Trained weights are in `/mnt/data2/bchao/tvcg_models`, organized by dataset name and experiment name. The directory tree structure is as follows:
@@ -24,9 +28,20 @@ Trained weights are in `/mnt/data2/bchao/tvcg_models`, organized by dataset name
 
 ### Training and testing
 
-Main training script: `train_best.py`. Testing script is `test.py`
+Main training script: `train_best.py`. Testing script is `test.py`.
+See `bash_run_scripts/train.sh` and `bash_run_scripts/test.sh` for more details on how to use arguments.
 
 ### Arguments
+- `mode`: input stereo image configuration `stereo_wide` or `stereo_narrow`. See paper for more details on this argument.
+- `max_disparity`: disparity scaling factor for input stereo images. Value depends on datasets.
+
+|Configuration|`max_disparity` value|
+|---|---|
+|hci|32|
+|inria_dlfd|40|
+|inria_lyro|10|
+
+
 
 
 --- 

@@ -89,7 +89,7 @@ See `bash_run_scripts/train.sh` and `bash_run_scripts/test.sh` for more details 
     - `stereo`: Use own stereo images as testing data. 
 --- 
 
-# For software team (Eric and Andy)
+# OLD: For software team (Eric and Andy)
 ## Data and weights
 - Extract `production.tgz`
 - Find model weights (.ckpt files) in extracted `production/weights/hci`, `production/weights/inria` folder 

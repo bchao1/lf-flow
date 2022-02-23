@@ -59,8 +59,10 @@ Trained weights are saved on server `140.112.21.58`, in `/mnt/data2/bchao/tvcg_m
 Main training script: `train_best.py`. Testing script is `test.py`.
 See `bash_run_scripts/train.sh` and `bash_run_scripts/test.sh` for more details on how to use arguments.
 
-## Arguments
-- `mode`: input stereo image configuration `stereo_wide` or `stereo_narrow`. See paper for more details on this argument.
+### Training arguments
+- `imsize`: Image size of dataset.
+- `save_epochs`: Save model frequency.
+- `use_crop`: Crop or resize image to `imsize`. If specified, use cropping rather than resize.
 - `max_disparity`: disparity scaling factor for input stereo images. Value depends on datasets.
 
 |Configuration|`max_disparity` value|
@@ -69,9 +71,22 @@ See `bash_run_scripts/train.sh` and `bash_run_scripts/test.sh` for more details 
 |inria_dlfd|40|
 |inria_lyro|10|
 
+- `disp_model`: Disparity network architecture. Default `original`.
+- `refine_model`: Refinement network architecture. Default `3dcnn`.
+- `refine_hidden`: Refinement network hidden channels. Default 128.
+- `merge_method`: Merge method (see paper for more details). Best model uses `alpha`.
+- `recon_loss`: Reconstruction loss. Default `l1`.
+- `consistency_w`: Weight of left-right consistency loss.
+- `tv_loss_w`: Weight of disparity smoothing loss.
+- `dataset`: Light field dataset to use. Currently supported: `hci`, `inria_lytro`, `inria_dlfd`. 
+- `name`: Name of experiment.
+- `mode`: input stereo image configuration `stereo_wide` or `stereo_narrow`. See paper or above for more details on this argument.
 
-
-
+### Additional testing arguments
+- `test_mode`: Testing mode
+    - `normal`: Compute PSNR, SSIM over all testing data
+    - `horizontal`: Computer PSNR, SSIM over middle row subviews in light field testing data. To compare with Zhang et. al.
+    - `stereo`: Use own stereo images as testing data. 
 --- 
 
 # For software team (Eric and Andy)

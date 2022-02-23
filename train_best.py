@@ -176,8 +176,6 @@ def main():
     parser.add_argument("--save_epochs", type=int, default=100)
     parser.add_argument("--train_epochs", type=int, default=1000)
     parser.add_argument("--lr", type=float, default=0.001)
-    #parser.add_argument("--warup_to", type=int, default=100)
-    parser.add_argument("--lr_decay_times", type=int, default=5) # decay learning rate??
     parser.add_argument("--max_disparity", type=float, default=10)
     parser.add_argument("--use_crop", action="store_true")
     parser.add_argument("--use_jitter", action="store_true")
@@ -188,7 +186,6 @@ def main():
 
     # Losses and regularizations
     parser.add_argument("--merge_method", default="avg", choices=["avg", "left", "right", "alpha", "learned_alpha"])
-    parser.add_argument("--use_weighted_view", action="store_true")
 
     parser.add_argument("--recon_loss", type=str, choices=['l1', 'l2'], default='l1')
     parser.add_argument('--consistency_w', type=float, default=1)
@@ -196,7 +193,6 @@ def main():
     
     parser.add_argument("--gpu_id", type=int, default=0)
     parser.add_argument("--dataset", type=str, choices=['hci', 'inria_lytro', 'inria_dlfd'], default='hci')
-    parser.add_argument("--fold", default=-1, type=int, choices=list(range(5)), help="Kth-fold for Stanford Dataset")
     parser.add_argument("--save_dir", type=str, default="experiments")
     parser.add_argument("--name", type=str)
     parser.add_argument("--mode", type=str, choices=["stereo_wide", "stereo_narrow"])
@@ -327,9 +323,6 @@ def main():
                 syn_lf = refine_net(merged_lf)
 
             weight_map = 1
-            if args.use_weighted_view:
-                weight_map = get_weight_map(row_idx, left_idx, right_idx, dataset.lf_res)
-            
             lf_loss = criterion(syn_lf, target_lf, weight_map)
             consistency_loss = (criterion(coarse_lf_left, target_lf, 1) + criterion(coarse_lf_right, target_lf, 1)) * 0.5 * args.consistency_w
             tv_loss = tv_criterion(unit_disp1) + tv_criterion(unit_disp2)
